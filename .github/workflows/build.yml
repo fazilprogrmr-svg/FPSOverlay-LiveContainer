@@ -1,0 +1,33 @@
+name: Build FPSOverlay
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Theos
+        uses: Randomblock1/theos-action@v1
+
+      - name: Build FPSOverlay
+        run: |
+          make FINALPACKAGE=1
+
+      - name: Find built dylib
+        run: |
+          mkdir -p artifact
+          find . -name "FPSOverlay.dylib" -exec cp {} artifact/ \;
+
+      - name: Upload FPSOverlay.dylib
+        uses: actions/upload-artifact@v4
+        with:
+          name: FPSOverlay-LiveContainer
+          path: artifact/
