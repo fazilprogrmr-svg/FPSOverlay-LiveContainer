@@ -1,4 +1,4 @@
-name: Build FPSOverlay
+name: Build FPSOverlay V3
 
 on:
   workflow_dispatch:
@@ -17,17 +17,62 @@ jobs:
       - name: Install Theos
         uses: Randomblock1/theos-action@v1
 
-      - name: Build FPSOverlay
+      - name: Build tweak
         run: |
+          make clean
           make FINALPACKAGE=1
 
-      - name: Find built dylib
+      - name: Find real dylib
         run: |
-          mkdir -p artifact
-          find . -name "FPSOverlay.dylib" -exec cp {} artifact/ \;
+          set -e
 
-      - name: Upload FPSOverlay.dylib
+          echo "=== Searching build output ==="
+
+          find . -type f \( -name "*.dylib" -o -name "*.debug" -o -name "*.dsym" \) -print
+
+          echo "=== Looking for FPSOverlay binaries ==="
+
+          find . -type f -name "FPSOverlay.dylib" -print
+
+          REAL_DYLIB=$(find . \
+            -type f \
+            -name "FPSOverlay.dylib" \
+            ! -path "*/.theos/*" \
+            ! -path "*/.dSYM/*" \
+            ! -path "*/obj/*" \
+            | head -n 1)
+
+          if [ -z "$REAL_DYLIB" ]; then
+            echo "ERROR: Real FPSOverlay.dylib was not found"
+            exit 1
+          fi
+
+          echo "Candidate: $REAL_DYLIB"
+
+          file "$REAL_DYLIB"
+
+          mkdir -p artifact
+          cp "$REAL_DYLIB" artifact/FPSOverlay.dylib
+
+      - name: Verify final dylib
+        run: |
+          set -e
+
+          echo "=== Final file ==="
+          file artifact/FPSOverlay.dylib
+
+          echo "=== Mach-O header ==="
+          otool -hv artifact/FPSOverlay.dylib
+
+          echo "=== Architecture ==="
+          lipo -info artifact/FPSOverlay.dylib
+
+          echo "=== File size ==="
+          ls -lh artifact/FPSOverlay.dylib
+
+      - name: Upload FPSOverlay V3
         uses: actions/upload-artifact@v4
         with:
-          name: FPSOverlay-LiveContainer
-          path: artifact/
+          name: FPSOverlay-V3-LiveContainer
+          path: artifact/FPSOverlay.dylib
+          if-no-files-found: error
