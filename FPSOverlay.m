@@ -3,16 +3,42 @@
 #import <mach/mach.h>
 #import <sys/sysctl.h>
 #import <float.h>
+#import <string.h>
 
-#pragma mark - FPS Graph
+#define FPS_HISTORY_SIZE 240
+
+#pragma mark - Graph View
 
 @interface FPSGraphView : UIView
+{
+    double _values[FPS_HISTORY_SIZE];
+    NSInteger _count;
+}
 
-@property(nonatomic, strong) NSArray<NSNumber *> *values;
+- (void)setFPSValues:(const double *)values count:(NSInteger)count;
 
 @end
 
 @implementation FPSGraphView
+
+- (void)setFPSValues:(const double *)values count:(NSInteger)count
+{
+    if (count < 0) {
+        count = 0;
+    }
+
+    if (count > FPS_HISTORY_SIZE) {
+        count = FPS_HISTORY_SIZE;
+    }
+
+    _count = count;
+
+    if (count > 0 && values != NULL) {
+        memcpy(_values, values, sizeof(double) * count);
+    }
+
+    [self setNeedsDisplay];
+}
 
 - (void)drawRect:(CGRect)rect
 {
@@ -22,17 +48,15 @@
         return;
     }
 
-    /*
-     * Reference lines
-     */
     CGContextSetLineWidth(context, 1.0);
     CGContextSetStrokeColorWithColor(
         context,
-        [UIColor colorWithWhite:1.0 alpha:0.18].CGColor
+        [UIColor colorWithWhite:1.0 alpha:0.16].CGColor
     );
 
-    for (NSInteger i = 1; i <= 3; i++) {
+    NSInteger i;
 
+    for (i = 1; i <= 3; i++) {
         CGFloat y =
             rect.size.height -
             (rect.size.height * (CGFloat)i / 4.0);
@@ -43,16 +67,10 @@
 
     CGContextStrokePath(context);
 
-    /*
-     * Need at least two points for graph
-     */
-    if (self.values.count < 2) {
+    if (_count < 2) {
         return;
     }
 
-    /*
-     * FPS graph
-     */
     CGContextSetStrokeColorWithColor(
         context,
         [UIColor colorWithWhite:1.0 alpha:0.95].CGColor
@@ -62,58 +80,30 @@
 
     CGFloat width = rect.size.width;
     CGFloat height = rect.size.height;
-
-    /*
-     * Graph scale.
-     *
-     * 120 FPS is the top of the graph.
-     */
     CGFloat maximumFPS = 120.0;
 
-    for (NSUInteger i = 0;
-         i < self.values.count;
-         i++) {
+    for (i = 0; i < _count; i++) {
+        double fps = _values[i];
 
-        NSNumber *number =
-            [self.values objectAtIndex:i];
-
-        double fps = [number doubleValue];
-
-        fps = MAX(0.0, MIN(maximumFPS, fps));
-
-        CGFloat x;
-
-        if (self.values.count <= 1) {
-
-            x = 0.0;
-
-        } else {
-
-            x =
-                width *
-                ((CGFloat)i /
-                 (CGFloat)(self.values.count - 1));
+        if (fps < 0.0) {
+            fps = 0.0;
         }
+
+        if (fps > maximumFPS) {
+            fps = maximumFPS;
+        }
+
+        CGFloat x =
+            width * ((CGFloat)i / (CGFloat)(_count - 1));
 
         CGFloat y =
             height -
             ((CGFloat)fps / maximumFPS) * height;
 
         if (i == 0) {
-
-            CGContextMoveToPoint(
-                context,
-                x,
-                y
-            );
-
+            CGContextMoveToPoint(context, x, y);
         } else {
-
-            CGContextAddLineToPoint(
-                context,
-                x,
-                y
-            );
+            CGContextAddLineToPoint(context, x, y);
         }
     }
 
@@ -122,85 +112,70 @@
 
 @end
 
-
-#pragma mark - FPS Overlay Controller
+#pragma mark - Overlay Controller
 
 @interface FPSOverlayController : NSObject
+{
+    UILabel *_leftLabel;
+    UILabel *_rightLabel;
+    UILabel *_deviceLabel;
 
-@property(nonatomic, strong) UILabel *leftLabel;
-@property(nonatomic, strong) UILabel *rightLabel;
-@property(nonatomic, strong) UILabel *deviceLabel;
+    FPSGraphView *_graphView;
 
-@property(nonatomic, strong) FPSGraphView *graphView;
+    UIWindow *_hostWindow;
 
-/*
- * IMPORTANT:
- *
- * Changed from weak to strong.
- *
- * Theos is compiling this tweak with manual reference
- * counting, where weak properties are not supported.
- */
-@property(nonatomic, strong) UIWindow *hostWindow;
+    CADisplayLink *_displayLink;
+    NSTimer *_refreshTimer;
 
-@property(nonatomic, strong) CADisplayLink *displayLink;
-@property(nonatomic, strong) NSTimer *refreshTimer;
+    CFTimeInterval _lastTimestamp;
+    NSInteger _frameCount;
 
-@property(nonatomic) CFTimeInterval lastTimestamp;
-@property(nonatomic) NSInteger frameCount;
+    double _fpsHistory[FPS_HISTORY_SIZE];
+    double _frameTimeHistory[FPS_HISTORY_SIZE];
 
-@property(nonatomic, strong) NSMutableArray<NSNumber *> *fpsSamples;
-@property(nonatomic, strong) NSMutableArray<NSNumber *> *frameTimeSamples;
+    NSInteger _historyCount;
+    double _sumFPS;
+}
 
-@property(nonatomic) double sumFPS;
+- (void)start;
+- (void)refreshWindow;
 
 @end
 
-
 @implementation FPSOverlayController
-
 
 #pragma mark Initialization
 
-- (instancetype)init
+- (id)init
 {
     self = [super init];
 
     if (self) {
+        memset(_fpsHistory, 0, sizeof(_fpsHistory));
+        memset(_frameTimeHistory, 0, sizeof(_frameTimeHistory));
 
-        _fpsSamples =
-            [NSMutableArray array];
-
-        _frameTimeSamples =
-            [NSMutableArray array];
-
+        _historyCount = 0;
         _sumFPS = 0.0;
-
         _lastTimestamp = 0.0;
-
         _frameCount = 0;
     }
 
     return self;
 }
 
-
-#pragma mark - Find Game Window
+#pragma mark Window
 
 - (UIWindow *)findGameWindow
 {
     if (@available(iOS 13.0, *)) {
-
-        NSSet<UIScene *> *scenes =
-            UIApplication.sharedApplication.connectedScenes;
+        NSSet *scenes =
+            [UIApplication.sharedApplication connectedScenes];
 
         for (UIScene *scene in scenes) {
-
-            if (scene.activationState !=
+            if ([scene activationState] !=
                     UISceneActivationStateForegroundActive &&
-                scene.activationState !=
+                [scene activationState] !=
                     UISceneActivationStateForegroundInactive) {
-
                 continue;
             }
 
@@ -211,33 +186,22 @@
             UIWindowScene *windowScene =
                 (UIWindowScene *)scene;
 
+            NSArray *windows =
+                [windowScene windows];
 
-            /*
-             * First try the key window.
-             */
-            for (UIWindow *window in windowScene.windows) {
-
-                if (!window.hidden &&
-                    window.alpha > 0.01 &&
-                    window.windowLevel ==
-                        UIWindowLevelNormal &&
-                    window.isKeyWindow) {
-
+            for (UIWindow *window in windows) {
+                if (![window isHidden] &&
+                    [window alpha] > 0.01 &&
+                    [window windowLevel] == UIWindowLevelNormal &&
+                    [window isKeyWindow]) {
                     return window;
                 }
             }
 
-
-            /*
-             * Otherwise use the first visible normal window.
-             */
-            for (UIWindow *window in windowScene.windows) {
-
-                if (!window.hidden &&
-                    window.alpha > 0.01 &&
-                    window.windowLevel ==
-                        UIWindowLevelNormal) {
-
+            for (UIWindow *window in windows) {
+                if (![window isHidden] &&
+                    [window alpha] > 0.01 &&
+                    [window windowLevel] == UIWindowLevelNormal) {
                     return window;
                 }
             }
@@ -247,347 +211,249 @@
     return nil;
 }
 
+#pragma mark UI
 
-#pragma mark - Create Label
-
-- (UILabel *)makeLabel
+- (UILabel *)createLabel
 {
-    UILabel *label =
-        [[UILabel alloc] init];
+    UILabel *label = [[UILabel alloc] init];
 
-    label.textColor =
-        UIColor.whiteColor;
+    [label setTextColor:[UIColor whiteColor]];
+    [label setBackgroundColor:[UIColor clearColor]];
 
-    label.backgroundColor =
-        UIColor.clearColor;
-
-    label.font =
+    [label setFont:
         [UIFont monospacedDigitSystemFontOfSize:12.0
-                                          weight:UIFontWeightBold];
+                                          weight:UIFontWeightBold]];
 
-    label.numberOfLines = 0;
+    [label setNumberOfLines:0];
+    [label setTextAlignment:NSTextAlignmentLeft];
+    [label setUserInteractionEnabled:NO];
 
-    label.textAlignment =
-        NSTextAlignmentLeft;
+    [[label layer] setShadowColor:
+        [UIColor blackColor].CGColor];
 
-    label.userInteractionEnabled = NO;
+    [[label layer] setShadowOffset:
+        CGSizeMake(1.0, 1.0)];
 
-    /*
-     * ARMSX2-style readable shadow.
-     */
-    label.layer.shadowColor =
-        UIColor.blackColor.CGColor;
+    [[label layer] setShadowOpacity:1.0];
+    [[label layer] setShadowRadius:1.5];
 
-    label.layer.shadowOffset =
-        CGSizeMake(1.0, 1.0);
-
-    label.layer.shadowOpacity = 1.0;
-
-    label.layer.shadowRadius = 1.5;
-
-    label.translatesAutoresizingMaskIntoConstraints = NO;
+    [label setTranslatesAutoresizingMaskIntoConstraints:NO];
 
     return label;
 }
 
-
-#pragma mark - Attach Overlay
-
 - (void)refreshWindow
 {
-    UIWindow *window =
-        [self findGameWindow];
+    UIWindow *window = [self findGameWindow];
 
     if (!window) {
         return;
     }
 
+    if (_hostWindow != window ||
+        [_leftLabel superview] != window) {
 
-    /*
-     * Reattach when the game creates/replaces
-     * its UIWindow.
-     */
-    if (self.hostWindow != window ||
-        self.leftLabel.superview != window) {
+        [_leftLabel removeFromSuperview];
+        [_rightLabel removeFromSuperview];
+        [_deviceLabel removeFromSuperview];
+        [_graphView removeFromSuperview];
 
+        _hostWindow = window;
 
-        /*
-         * Remove old UI.
-         */
-        [self.leftLabel removeFromSuperview];
-        [self.rightLabel removeFromSuperview];
-        [self.deviceLabel removeFromSuperview];
-        [self.graphView removeFromSuperview];
+        _leftLabel = [self createLabel];
+        _rightLabel = [self createLabel];
+        _deviceLabel = [self createLabel];
 
+        _graphView = [[FPSGraphView alloc] init];
 
-        self.hostWindow = window;
+        [_graphView setBackgroundColor:[UIColor clearColor]];
+        [_graphView setUserInteractionEnabled:NO];
+        [_graphView setTranslatesAutoresizingMaskIntoConstraints:NO];
 
-
-        /*
-         * Create labels.
-         */
-        self.leftLabel =
-            [self makeLabel];
-
-        self.rightLabel =
-            [self makeLabel];
-
-        self.deviceLabel =
-            [self makeLabel];
-
-
-        /*
-         * Create graph.
-         */
-        self.graphView =
-            [[FPSGraphView alloc] init];
-
-        self.graphView.backgroundColor =
-            UIColor.clearColor;
-
-        self.graphView.userInteractionEnabled =
-            NO;
-
-        self.graphView.translatesAutoresizingMaskIntoConstraints =
-            NO;
-
-
-        /*
-         * Add everything to the game window.
-         */
-        [window addSubview:self.leftLabel];
-
-        [window addSubview:self.rightLabel];
-
-        [window addSubview:self.deviceLabel];
-
-        [window addSubview:self.graphView];
-
+        [window addSubview:_leftLabel];
+        [window addSubview:_rightLabel];
+        [window addSubview:_deviceLabel];
+        [window addSubview:_graphView];
 
         UILayoutGuide *safe =
-            window.safeAreaLayoutGuide;
+            [window safeAreaLayoutGuide];
 
-
-        /*
-         * LEFT COLUMN
-         *
-         * FPS
-         * AVG
-         * 1% LOW
-         * 0.1% LOW
-         */
         [NSLayoutConstraint activateConstraints:@[
-
-            [self.leftLabel.trailingAnchor
+            [_leftLabel.trailingAnchor
                 constraintEqualToAnchor:safe.trailingAnchor
                 constant:-180.0],
 
-            [self.leftLabel.topAnchor
+            [_leftLabel.topAnchor
                 constraintEqualToAnchor:safe.topAnchor
                 constant:6.0],
 
-            [self.leftLabel.widthAnchor
+            [_leftLabel.widthAnchor
                 constraintEqualToConstant:175.0],
 
-            [self.leftLabel.heightAnchor
+            [_leftLabel.heightAnchor
                 constraintEqualToConstant:82.0]
         ]];
 
-
-        /*
-         * RIGHT COLUMN
-         *
-         * Frame time
-         * MIN
-         * MAX
-         * HZ
-         * RAM
-         */
         [NSLayoutConstraint activateConstraints:@[
-
-            [self.rightLabel.trailingAnchor
+            [_rightLabel.trailingAnchor
                 constraintEqualToAnchor:safe.trailingAnchor
                 constant:-8.0],
 
-            [self.rightLabel.topAnchor
+            [_rightLabel.topAnchor
                 constraintEqualToAnchor:safe.topAnchor
                 constant:6.0],
 
-            [self.rightLabel.widthAnchor
+            [_rightLabel.widthAnchor
                 constraintEqualToConstant:170.0],
 
-            [self.rightLabel.heightAnchor
+            [_rightLabel.heightAnchor
                 constraintEqualToConstant:105.0]
         ]];
 
-
-        /*
-         * DEVICE INFORMATION
-         */
         [NSLayoutConstraint activateConstraints:@[
-
-            [self.deviceLabel.trailingAnchor
+            [_deviceLabel.trailingAnchor
                 constraintEqualToAnchor:safe.trailingAnchor
                 constant:-8.0],
 
-            [self.deviceLabel.topAnchor
-                constraintEqualToAnchor:
-                    self.rightLabel.bottomAnchor
+            [_deviceLabel.topAnchor
+                constraintEqualToAnchor:_rightLabel.bottomAnchor
                 constant:0.0],
 
-            [self.deviceLabel.widthAnchor
+            [_deviceLabel.widthAnchor
                 constraintEqualToConstant:340.0],
 
-            [self.deviceLabel.heightAnchor
+            [_deviceLabel.heightAnchor
                 constraintEqualToConstant:42.0]
         ]];
 
-
-        /*
-         * FPS GRAPH
-         */
         [NSLayoutConstraint activateConstraints:@[
-
-            [self.graphView.trailingAnchor
+            [_graphView.trailingAnchor
                 constraintEqualToAnchor:safe.trailingAnchor
                 constant:-8.0],
 
-            [self.graphView.topAnchor
-                constraintEqualToAnchor:
-                    self.deviceLabel.bottomAnchor
+            [_graphView.topAnchor
+                constraintEqualToAnchor:_deviceLabel.bottomAnchor
                 constant:2.0],
 
-            [self.graphView.widthAnchor
+            [_graphView.widthAnchor
                 constraintEqualToConstant:245.0],
 
-            [self.graphView.heightAnchor
+            [_graphView.heightAnchor
                 constraintEqualToConstant:70.0]
         ]];
-
-
-        [self updateLabels];
     }
 
-
-    /*
-     * Create CADisplayLink only once.
-     */
-    if (!self.displayLink) {
-
-        self.displayLink =
+    if (!_displayLink) {
+        _displayLink =
             [CADisplayLink displayLinkWithTarget:self
                                         selector:@selector(frameTick:)];
 
-        [self.displayLink
-            addToRunLoop:NSRunLoop.mainRunLoop
-            forMode:NSRunLoopCommonModes];
+        [_displayLink addToRunLoop:[NSRunLoop mainRunLoop]
+                           forMode:NSRunLoopCommonModes];
     }
+
+    [self updateLabels];
 }
 
-
-#pragma mark - Current FPS
+#pragma mark Statistics
 
 - (double)currentFPS
 {
-    NSNumber *last =
-        self.fpsSamples.lastObject;
-
-    if (!last) {
+    if (_historyCount <= 0) {
         return 0.0;
     }
 
-    return [last doubleValue];
+    return _fpsHistory[_historyCount - 1];
 }
-
-
-#pragma mark - Average FPS
 
 - (double)averageFPS
 {
-    if (self.fpsSamples.count == 0) {
+    if (_historyCount <= 0) {
         return 0.0;
     }
 
-    return
-        self.sumFPS /
-        (double)self.fpsSamples.count;
+    return _sumFPS / (double)_historyCount;
 }
 
-
-#pragma mark - Percentile
-
-- (double)percentileLow:(double)percent
+- (double)minimumFPS
 {
-    if (self.fpsSamples.count < 2) {
-        return 0.0;
-    }
-
-    NSArray<NSNumber *> *sortedSamples =
-        [self.fpsSamples
-            sortedArrayUsingSelector:@selector(compare:)];
-
-    NSUInteger index =
-        (NSUInteger)floor(
-            (double)(sortedSamples.count - 1) *
-            percent
-        );
-
-    NSNumber *value =
-        [sortedSamples objectAtIndex:index];
-
-    return [value doubleValue];
-}
-
-
-#pragma mark - Rolling Minimum
-
-- (double)rollingMin
-{
-    if (self.fpsSamples.count == 0) {
+    if (_historyCount <= 0) {
         return 0.0;
     }
 
     double minimum = DBL_MAX;
 
-    for (NSNumber *number in self.fpsSamples) {
+    NSInteger i;
 
-        double value =
-            [number doubleValue];
-
-        if (value < minimum) {
-            minimum = value;
+    for (i = 0; i < _historyCount; i++) {
+        if (_fpsHistory[i] < minimum) {
+            minimum = _fpsHistory[i];
         }
     }
 
     return minimum;
 }
 
-
-#pragma mark - Rolling Maximum
-
-- (double)rollingMax
+- (double)maximumFPS
 {
-    if (self.fpsSamples.count == 0) {
+    if (_historyCount <= 0) {
         return 0.0;
     }
 
     double maximum = 0.0;
 
-    for (NSNumber *number in self.fpsSamples) {
+    NSInteger i;
 
-        double value =
-            [number doubleValue];
-
-        if (value > maximum) {
-            maximum = value;
+    for (i = 0; i < _historyCount; i++) {
+        if (_fpsHistory[i] > maximum) {
+            maximum = _fpsHistory[i];
         }
     }
 
     return maximum;
 }
 
+- (double)percentile:(double)percent
+{
+    if (_historyCount < 2) {
+        return 0.0;
+    }
 
-#pragma mark - RAM
+    double sorted[FPS_HISTORY_SIZE];
+
+    NSInteger i;
+
+    for (i = 0; i < _historyCount; i++) {
+        sorted[i] = _fpsHistory[i];
+    }
+
+    for (i = 1; i < _historyCount; i++) {
+        double key = sorted[i];
+        NSInteger j = i - 1;
+
+        while (j >= 0 && sorted[j] > key) {
+            sorted[j + 1] = sorted[j];
+            j--;
+        }
+
+        sorted[j + 1] = key;
+    }
+
+    NSInteger index =
+        (NSInteger)floor(
+            (double)(_historyCount - 1) * percent
+        );
+
+    if (index < 0) {
+        index = 0;
+    }
+
+    if (index >= _historyCount) {
+        index = _historyCount - 1;
+    }
+
+    return sorted[index];
+}
 
 - (double)memoryMB
 {
@@ -613,8 +479,7 @@
         (1024.0 * 1024.0);
 }
 
-
-#pragma mark - Machine Identifier
+#pragma mark Device
 
 - (NSString *)machineIdentifier
 {
@@ -632,8 +497,7 @@
         return @"Unknown";
     }
 
-    char *machine =
-        calloc(1, size);
+    char *machine = calloc(1, size);
 
     if (!machine) {
         return @"Unknown";
@@ -652,321 +516,212 @@
 
     free(machine);
 
-    return identifier ?: @"Unknown";
+    return identifier ? identifier : @"Unknown";
 }
-
-
-#pragma mark - Device Name
 
 - (NSString *)deviceName
 {
     NSString *machine =
         [self machineIdentifier];
 
-
-    NSDictionary *knownDevices = @{
-
+    NSDictionary *devices = @{
         @"iPhone14,5" : @"iPhone 13",
-
         @"iPhone14,2" : @"iPhone 13 Pro",
-
         @"iPhone14,3" : @"iPhone 13 Pro Max",
-
         @"iPhone14,4" : @"iPhone 13 mini",
-
         @"iPhone15,4" : @"iPhone 15",
-
         @"iPhone15,5" : @"iPhone 15 Plus",
-
         @"iPhone15,2" : @"iPhone 14 Pro",
-
         @"iPhone15,3" : @"iPhone 14 Pro Max",
-
         @"iPhone17,1" : @"iPhone 16 Pro",
-
         @"iPhone17,2" : @"iPhone 16 Pro Max"
     };
 
-
     NSString *name =
-        [knownDevices objectForKey:machine];
+        [devices objectForKey:machine];
 
-    if (name) {
-        return name;
-    }
-
-    return machine;
+    return name ? name : machine;
 }
-
-
-#pragma mark - GPU
 
 - (NSString *)gpuName
 {
-    /*
-     * iOS does not provide a reliable public API
-     * for per-game GPU utilization.
-     *
-     * We therefore show the GPU family only.
-     */
     return @"Apple GPU";
 }
 
-
-#pragma mark - Frame Tick
+#pragma mark Frame Measurement
 
 - (void)frameTick:(CADisplayLink *)link
 {
-    if (self.lastTimestamp == 0.0) {
-
-        self.lastTimestamp =
-            link.timestamp;
-
-        self.frameCount = 0;
-
+    if (_lastTimestamp == 0.0) {
+        _lastTimestamp = link.timestamp;
+        _frameCount = 0;
         return;
     }
 
-
-    self.frameCount++;
-
+    _frameCount++;
 
     CFTimeInterval elapsed =
-        link.timestamp -
-        self.lastTimestamp;
+        link.timestamp - _lastTimestamp;
 
-
-    /*
-     * Update statistics every 0.5 second.
-     */
     if (elapsed >= 0.5) {
 
         double fps =
-            (double)self.frameCount /
-            elapsed;
+            (double)_frameCount / elapsed;
 
+        if (fps > 0.0 && fps < 240.0) {
 
-        double frameTime =
-            fps > 0.0
-                ? (1000.0 / fps)
-                : 0.0;
+            if (_historyCount >= FPS_HISTORY_SIZE) {
 
+                _sumFPS -= _fpsHistory[0];
 
-        if (fps > 0.0 &&
-            fps < 240.0) {
+                NSInteger i;
 
+                for (i = 1;
+                     i < FPS_HISTORY_SIZE;
+                     i++) {
 
-            /*
-             * Keep approximately 2 minutes
-             * of rolling samples.
-             *
-             * One sample every 0.5 sec:
-             *
-             * 240 samples = 120 seconds.
-             */
-            if (self.fpsSamples.count >= 240) {
+                    _fpsHistory[i - 1] =
+                        _fpsHistory[i];
 
-                NSNumber *oldFPS =
-                    [self.fpsSamples objectAtIndex:0];
+                    _frameTimeHistory[i - 1] =
+                        _frameTimeHistory[i];
+                }
 
-                self.sumFPS -=
-                    [oldFPS doubleValue];
-
-                [self.fpsSamples
-                    removeObjectAtIndex:0];
-
-
-                [self.frameTimeSamples
-                    removeObjectAtIndex:0];
+                _historyCount =
+                    FPS_HISTORY_SIZE - 1;
             }
 
+            double frameTime =
+                1000.0 / fps;
 
-            [self.fpsSamples
-                addObject:@(fps)];
+            _fpsHistory[_historyCount] =
+                fps;
 
-            [self.frameTimeSamples
-                addObject:@(frameTime)];
+            _frameTimeHistory[_historyCount] =
+                frameTime;
 
+            _historyCount++;
 
-            self.sumFPS += fps;
+            _sumFPS += fps;
         }
 
-
-        self.frameCount = 0;
-
-        self.lastTimestamp =
-            link.timestamp;
-
+        _frameCount = 0;
+        _lastTimestamp = link.timestamp;
 
         [self updateLabels];
     }
 }
 
-
-#pragma mark - Update Overlay Text
+#pragma mark Update UI
 
 - (void)updateLabels
 {
-    if (!self.leftLabel ||
-        !self.rightLabel) {
-
+    if (!_leftLabel ||
+        !_rightLabel ||
+        !_deviceLabel) {
         return;
     }
-
 
     double fps =
         [self currentFPS];
 
-
     double average =
         [self averageFPS];
 
-
     double frameTime =
         fps > 0.0
-            ? (1000.0 / fps)
+            ? 1000.0 / fps
             : 0.0;
 
-
     double minimum =
-        [self rollingMin];
-
+        [self minimumFPS];
 
     double maximum =
-        [self rollingMax];
-
+        [self maximumFPS];
 
     double onePercentLow =
-        [self percentileLow:0.01];
-
+        [self percentile:0.01];
 
     double zeroPointOnePercentLow =
-        [self percentileLow:0.001];
-
+        [self percentile:0.001];
 
     double ram =
         [self memoryMB];
 
-
-    /*
-     * Display refresh rate.
-     */
     NSInteger hz = 60;
 
-    if (self.hostWindow.screen) {
+    if (_hostWindow &&
+        [_hostWindow screen]) {
 
         hz =
             (NSInteger)
-            self.hostWindow.screen.maximumFramesPerSecond;
+            [[_hostWindow screen]
+                maximumFramesPerSecond];
     }
 
-
-    /*
-     * LEFT SIDE
-     */
-    self.leftLabel.text =
+    [_leftLabel setText:
         [NSString stringWithFormat:
-
             @"FPS : %5.1f\n"
              @"AVG : %5.1f\n"
              @"1%% LOW : %5.1f\n"
              @"0.1%% LOW : %4.1f",
-
             fps,
             average,
             onePercentLow,
             zeroPointOnePercentLow
-        ];
+        ]];
 
-
-    /*
-     * RIGHT SIDE
-     */
-    self.rightLabel.text =
+    [_rightLabel setText:
         [NSString stringWithFormat:
-
             @"FT  : %6.2f ms\n"
              @"MIN : %6.1f\n"
              @"MAX : %6.1f\n"
              @"HZ  : %3ld\n"
              @"RAM : %4.0f MB",
-
             frameTime,
             minimum,
             maximum,
             (long)hz,
             ram
-        ];
+        ]];
 
+    UIDevice *device =
+        [UIDevice currentDevice];
 
-    /*
-     * Battery.
-     */
     float battery =
-        UIDevice.currentDevice.batteryLevel;
-
+        [device batteryLevel];
 
     NSString *batteryText;
 
-
     if (battery >= 0.0) {
-
         batteryText =
             [NSString stringWithFormat:
                 @"BAT : %3.0f%%",
                 battery * 100.0];
-
     } else {
-
-        batteryText =
-            @"BAT : N/A";
+        batteryText = @"BAT : N/A";
     }
 
-
-    /*
-     * Device line.
-     */
-    self.deviceLabel.text =
+    [_deviceLabel setText:
         [NSString stringWithFormat:
-
-            @"%@  |  GPU : %@  |  %@",
-
+            @"%@ | GPU : %@ | %@",
             [self deviceName],
-
             [self gpuName],
-
             batteryText
-        ];
+        ]];
 
-
-    /*
-     * Graph.
-     */
-    self.graphView.values =
-        self.fpsSamples;
-
-
-    [self.graphView setNeedsDisplay];
+    [_graphView
+        setFPSValues:_fpsHistory
+        count:_historyCount];
 }
 
-
-#pragma mark - Start
+#pragma mark Start
 
 - (void)start
 {
-    /*
-     * Battery monitoring starts only after
-     * the application is active.
-     */
-    UIDevice.currentDevice.batteryMonitoringEnabled =
-        YES;
+    [[UIDevice currentDevice]
+        setBatteryMonitoringEnabled:YES];
 
-
-    /*
-     * Delay UI creation.
-     *
-     * This is important for game compatibility.
-     */
     dispatch_after(
         dispatch_time(
             DISPATCH_TIME_NOW,
@@ -977,13 +732,8 @@
 
             [self refreshWindow];
 
-
-            /*
-             * Check for window replacement every 2 seconds.
-             */
-            if (!self.refreshTimer) {
-
-                self.refreshTimer =
+            if (!_refreshTimer) {
+                _refreshTimer =
                     [NSTimer
                         scheduledTimerWithTimeInterval:2.0
                         target:self
@@ -997,20 +747,13 @@
 
 @end
 
+#pragma mark - Entry Point
 
-#pragma mark - Dylib Entry Point
-
-static FPSOverlayController *gFPSOverlayController;
-
+static FPSOverlayController *gFPSOverlayController = nil;
 
 __attribute__((constructor))
 static void FPSOverlayInit(void)
 {
-    /*
-     * Do as little as possible during dylib loading.
-     *
-     * Do NOT touch game windows or game data here.
-     */
     dispatch_async(
         dispatch_get_main_queue(),
         ^{
@@ -1018,10 +761,6 @@ static void FPSOverlayInit(void)
             gFPSOverlayController =
                 [[FPSOverlayController alloc] init];
 
-
-            /*
-             * Start when the game becomes active.
-             */
             [[NSNotificationCenter defaultCenter]
                 addObserverForName:
                     UIApplicationDidBecomeActiveNotification
@@ -1034,15 +773,9 @@ static void FPSOverlayInit(void)
                         [gFPSOverlayController start];
                     }];
 
-
-            /*
-             * If the application is already active,
-             * start immediately.
-             */
-            if (
-                UIApplication.sharedApplication.applicationState ==
-                UIApplicationStateActive
-            ) {
+            if ([[UIApplication sharedApplication]
+                    applicationState] ==
+                UIApplicationStateActive) {
 
                 [gFPSOverlayController start];
             }
