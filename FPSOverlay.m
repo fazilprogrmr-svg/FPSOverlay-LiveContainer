@@ -1,108 +1,122 @@
+
 #import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
 
-@interface FPSOverlayV2Controller : NSObject
-@property(nonatomic,strong) UIWindow *overlayWindow;
-@property(nonatomic,strong) UILabel *label;
-@property(nonatomic,strong) CADisplayLink *displayLink;
+@interface FPSOverlayController : NSObject
+@property(nonatomic, strong) UILabel *label;
+@property(nonatomic, strong) CADisplayLink *displayLink;
+@property(nonatomic, weak) UIWindow *hostWindow;
 @property(nonatomic) CFTimeInterval lastTimestamp;
-@property(nonatomic) NSUInteger frameCount;
+@property(nonatomic) NSInteger frameCount;
 @end
 
-@implementation FPSOverlayV2Controller
+@implementation FPSOverlayController
 
 - (void)start {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [self createOverlayWindow];
-        [self startDisplayLink];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        [self attachToGameWindow];
     });
 }
 
-- (UIWindowScene *)activeWindowScene {
-    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-        if (![scene isKindOfClass:[UIWindowScene class]]) continue;
-        if (scene.activationState == UISceneActivationStateForegroundActive ||
-            scene.activationState == UISceneActivationStateForegroundInactive) {
-            return (UIWindowScene *)scene;
+- (UIWindow *)findGameWindow {
+    UIWindow *best = nil;
+
+    if (@available(iOS 13.0, *)) {
+        for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
+            if (scene.activationState != UISceneActivationStateForegroundActive &&
+                scene.activationState != UISceneActivationStateForegroundInactive) {
+                continue;
+            }
+
+            if (![scene isKindOfClass:[UIWindowScene class]]) continue;
+
+            UIWindowScene *windowScene = (UIWindowScene *)scene;
+            for (UIWindow *window in windowScene.windows) {
+                if (window.hidden || window.alpha <= 0.01) continue;
+                if (window.windowLevel != UIWindowLevelNormal) continue;
+
+                if ([window isKeyWindow]) return window;
+                if (!best) best = window;
+            }
         }
     }
-    return nil;
+
+    if (!best) {
+        for (UIWindow *window in [UIApplication sharedApplication].windows) {
+            if (window.hidden || window.alpha <= 0.01) continue;
+            if (window.windowLevel != UIWindowLevelNormal) continue;
+            if ([window isKeyWindow]) return window;
+            if (!best) best = window;
+        }
+    }
+
+    return best;
 }
 
-- (void)createOverlayWindow {
-    UIWindowScene *scene = [self activeWindowScene];
-
-    if (!scene) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)),
+- (void)attachToGameWindow {
+    UIWindow *window = [self findGameWindow];
+    if (!window) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
-            [self createOverlayWindow];
+            [self attachToGameWindow];
         });
         return;
     }
 
-    if (self.overlayWindow) return;
+    self.hostWindow = window;
 
-    self.overlayWindow = [[UIWindow alloc] initWithWindowScene:scene];
-    self.overlayWindow.frame = scene.coordinateSpace.bounds;
-    self.overlayWindow.backgroundColor = UIColor.clearColor;
-    self.overlayWindow.windowLevel = UIWindowLevelAlert - 1.0;
-    self.overlayWindow.userInteractionEnabled = NO;
+    UILabel *label = [[UILabel alloc] init];
+    label.textColor = [UIColor whiteColor];
+    label.backgroundColor = [UIColor clearColor];
+    label.font = [UIFont boldSystemFontOfSize:22.0];
+    label.numberOfLines = 2;
+    label.textAlignment = NSTextAlignmentLeft;
+    label.text = @"FPS --\n-- ms";
+    label.userInteractionEnabled = NO;
 
-    UIViewController *vc = [UIViewController new];
-    vc.view.backgroundColor = UIColor.clearColor;
-    self.overlayWindow.rootViewController = vc;
+    // Subtle shadow keeps text readable without a background box.
+    label.layer.shadowColor = [UIColor blackColor].CGColor;
+    label.layer.shadowOffset = CGSizeMake(1.0, 1.0);
+    label.layer.shadowOpacity = 0.9;
+    label.layer.shadowRadius = 2.0;
 
-    self.label = [[UILabel alloc] init];
-    self.label.translatesAutoresizingMaskIntoConstraints = NO;
-    self.label.text = @"FPS V2 --";
-    self.label.numberOfLines = 2;
-    self.label.textAlignment = NSTextAlignmentCenter;
-    self.label.textColor = UIColor.whiteColor;
-    self.label.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.72];
-    self.label.font = [UIFont monospacedDigitSystemFontOfSize:13.0 weight:UIFontWeightBold];
-    self.label.layer.cornerRadius = 7.0;
-    self.label.layer.masksToBounds = YES;
+    label.translatesAutoresizingMaskIntoConstraints = NO;
+    [window addSubview:label];
 
-    [vc.view addSubview:self.label];
-
-    UILayoutGuide *safe = vc.view.safeAreaLayoutGuide;
     [NSLayoutConstraint activateConstraints:@[
-        [self.label.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:8.0],
-        [self.label.topAnchor constraintEqualToAnchor:safe.topAnchor constant:8.0],
-        [self.label.widthAnchor constraintEqualToConstant:115.0],
-        [self.label.heightAnchor constraintEqualToConstant:44.0]
+        [label.leadingAnchor constraintEqualToAnchor:window.leadingAnchor constant:155.0],
+        [label.topAnchor constraintEqualToAnchor:window.safeAreaLayoutGuide.topAnchor constant:8.0],
+        [label.widthAnchor constraintEqualToConstant:170.0],
+        [label.heightAnchor constraintEqualToConstant:60.0]
     ]];
 
-    self.overlayWindow.hidden = NO;
-}
+    self.label = label;
+    self.lastTimestamp = 0;
+    self.frameCount = 0;
 
-- (void)startDisplayLink {
-    if (self.displayLink) return;
-
-    self.displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(displayTick:)];
-
-    if (@available(iOS 15.0, *)) {
-        self.displayLink.preferredFrameRateRange = CAFrameRateRangeMake(1.0, 120.0, 0.0);
-    }
-
+    self.displayLink = [CADisplayLink displayLinkWithTarget:self
+                                                   selector:@selector(frameTick:)];
     [self.displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
 }
 
-- (void)displayTick:(CADisplayLink *)link {
-    if (!self.label) return;
-
+- (void)frameTick:(CADisplayLink *)link {
     if (self.lastTimestamp == 0) {
         self.lastTimestamp = link.timestamp;
+        self.frameCount = 0;
         return;
     }
 
     self.frameCount++;
+
     CFTimeInterval elapsed = link.timestamp - self.lastTimestamp;
 
     if (elapsed >= 0.5) {
-        double fps = (double)self.frameCount / elapsed;
-        double ms = fps > 0.0 ? 1000.0 / fps : 0.0;
+        double fps = self.frameCount / elapsed;
+        double ms = fps > 0.0 ? (1000.0 / fps) : 0.0;
+
         self.label.text = [NSString stringWithFormat:@"FPS %.1f\n%.2f ms", fps, ms];
+
         self.frameCount = 0;
         self.lastTimestamp = link.timestamp;
     }
@@ -110,13 +124,12 @@
 
 @end
 
+static FPSOverlayController *gFPSOverlayController;
+
 __attribute__((constructor))
-static void FPSOverlayV2Init(void) {
+static void FPSOverlayInit(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        static FPSOverlayV2Controller *controller = nil;
-        if (!controller) {
-            controller = [FPSOverlayV2Controller new];
-            [controller start];
-        }
+        gFPSOverlayController = [FPSOverlayController new];
+        [gFPSOverlayController start];
     });
 }

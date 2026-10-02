@@ -1,8 +1,8 @@
-Package: com.livecontainer.fpsoverlay
-Name: FPS Overlay for LiveContainer
-Version: 1.0.0
-Architecture: iphoneos-arm
-Description: Simple FPS and frame-time overlay for LiveContainer guest apps.
-Maintainer: Local Build
-Author: Local Build
+Package: com.fazil.fpsoverlay
+Name: FPSOverlay
+Version: 5.0
+Architecture: iphoneos-arm64
+Description: Simple text-only FPS and frame-time overlay for LiveContainer.
+Maintainer: Fazil
+Author: Fazil
 Section: Tweaks

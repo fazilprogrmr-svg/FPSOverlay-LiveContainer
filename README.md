@@ -1,176 +1,186 @@
 # FPSOverlay for LiveContainer
 
-A lightweight FPS and frame-time overlay tweak for iOS applications running through [LiveContainer](https://github.com/LiveContainer/LiveContainer).
+A lightweight in-game FPS and frame-time overlay for iOS games running through **LiveContainer**.
 
-The overlay displays the approximate display-link frame rate directly on top of the application.
+FPSOverlay is packaged as a `.dylib` tweak and loaded using LiveContainer's TweakLoader.
 
 ## Features
 
-- 📊 Real-time FPS display
-- ⏱️ Approximate frame time in milliseconds
-- 📱 Designed for iOS
-- 🧩 Works as a `.dylib` tweak
-- 📦 Designed for LiveContainer's TweakLoader
-- 🎮 Useful for checking game performance
-- 🔧 Lightweight and simple
+- 📊 Live FPS counter
+- ⏱️ Frame time in milliseconds
+- 🪶 Lightweight and simple
+- 👻 No background box — text only
+- 👤 White text with a subtle black shadow for readability
+- 📱 Designed for ARM64 iPhones
+- 🎮 Intended for games running inside LiveContainer
+- 🔌 Uses `CADisplayLink` for frame timing
+- 🚫 Does not download or modify game assets
 
-Example:
+## Screenshot
+
+The overlay displays information similar to:
 
 ```text
-FPS 59.8
-16.72 ms
+FPS 32.7
+30.57 ms
 ```
 
 ## Requirements
 
-- iPhone or iPad running a compatible iOS version
-- LiveContainer
-- TweakLoader enabled
-- `FPSOverlay.dylib`
+- iPhone/iPad with ARM64 support
+- iOS 16 or later
+- [LiveContainer](https://github.com/LiveContainer/LiveContainer)
+- LiveContainer TweakLoader
+- A way to install/load `.dylib` tweaks through LiveContainer
 
 ## Installation
 
-### 1. Download FPSOverlay
+### 1. Build the tweak
 
-Download the latest `FPSOverlay.dylib` from the Releases section of this repository.
+Download the latest GitHub Actions artifact:
 
-### 2. Import into LiveContainer
+**`FPSOverlay-V5-LiveContainer`**
 
-Open LiveContainer and go to:
-
-```text
-Tweaks
-```
-
-Import:
+Inside the artifact you will find:
 
 ```text
 FPSOverlay.dylib
 ```
 
-Enable the tweak.
+### 2. Add the tweak to LiveContainer
 
-### 3. Enable it for your game
+Open LiveContainer and add `FPSOverlay.dylib` to your tweak folder.
 
-You can use the global tweak folder or an app-specific tweak folder.
+You can use either:
 
-For game-specific use:
+- The global **Tweaks** folder, or
+- An app-specific tweak folder
+
+For an app-specific setup, assign the folder to the game using the game's **Tweak Folder** setting.
+
+### 3. Enable the tweak
+
+Make sure:
 
 ```text
-LiveContainer
-└── Tweaks
-    └── Your Game
-        └── FPSOverlay.dylib
+FPSOverlay.dylib → ON
 ```
 
-### 4. Restart the game
+Launch the game through LiveContainer.
 
-Completely close the guest application and launch it again through LiveContainer.
+The FPS counter should appear after the game finishes launching.
 
-The FPS overlay should appear in the top-left corner.
+## Building from Source
 
-## How FPS Is Measured
+This project uses **Theos** and GitHub Actions.
 
-FPSOverlay uses Apple's `CADisplayLink` to measure the rate of display-link callbacks received by the application.
-
-The approximate FPS is calculated from:
+The repository contains:
 
 ```text
-FPS = frames / elapsed time
-```
-
-Frame time is estimated using:
-
-```text
-Frame Time = 1000 / FPS
-```
-
-Examples:
-
-```text
-60 FPS ≈ 16.67 ms
-30 FPS ≈ 33.33 ms
-120 FPS ≈ 8.33 ms
-```
-
-## Important Limitations
-
-FPSOverlay is a lightweight performance indicator, not a full graphics profiler.
-
-The displayed value represents the display-link callback rate available to the application. It may not exactly equal the game's internal renderer or GPU frame rate.
-
-Some games may:
-
-- Use a custom rendering loop
-- Use frame pacing
-- Skip or duplicate frames
-- Render internally at a different rate
-- Use Metal or another rendering technology differently
-
-Therefore, FPSOverlay should be considered an approximate FPS measurement.
-
-## FPS Overlay vs FPS Unlocker
-
-FPSOverlay does not unlock FPS.
-
-It only displays the measured frame rate.
-
-For example, if a game is limited to 30 FPS, FPSOverlay may show:
-
-```text
-FPS 30.0
-33.33 ms
-```
-
-It will not automatically change the game to 60 FPS or 120 FPS.
-
-## Troubleshooting
-
-### FPSOverlay does not appear
-
-Check the following:
-
-1. Make sure `FPSOverlay.dylib` is enabled in LiveContainer.
-2. Make sure TweakLoader is enabled.
-3. Completely close the game.
-4. Completely close LiveContainer.
-5. Open LiveContainer again.
-6. Launch the game again.
-
-### FPSOverlay appears but FPS does not change
-
-Some applications may not expose their rendering rate through `CADisplayLink` in a way that accurately represents their internal renderer.
-
-### Game crashes after enabling FPSOverlay
-
-Disable FPSOverlay and launch the game again.
-
-If the problem disappears, report the issue with:
-
-- iOS version
-- Device model
-- LiveContainer version
-- Game name
-- Game version
-- Crash behavior
-
-## Building
-
-This project includes a GitHub Actions workflow.
-
-```text
+FPSOverlay.m
+FPSOverlay.plist
+Makefile
+control
+README.md
 .github/
 └── workflows/
     └── build.yml
 ```
 
-The workflow builds the tweak and uploads:
+The GitHub Actions workflow automatically:
 
-```text
-FPSOverlay.dylib
+1. Checks out the repository.
+2. Installs Theos.
+3. Builds the tweak for ARM64.
+4. Verifies the generated Mach-O dylib.
+5. Packages `FPSOverlay.dylib`.
+6. Uploads the finished dylib as a GitHub Actions artifact.
+
+### Manual build
+
+If Theos is already installed:
+
+```bash
+make clean
+make FINALPACKAGE=1
 ```
 
-as a GitHub Actions artifact.
+The resulting ARM64 dylib is generated under:
+
+```text
+.theos/obj/arm64/FPSOverlay.dylib
+```
+
+## How It Works
+
+FPSOverlay creates a small text label inside the game's existing normal `UIWindow`.
+
+It uses:
+
+```objc
+CADisplayLink
+```
+
+to measure frame presentation timing.
+
+The overlay calculates:
+
+```text
+FPS = frames / elapsed time
+```
+
+and:
+
+```text
+Frame Time = 1000 / FPS
+```
+
+The displayed result is updated approximately twice per second to keep the overlay lightweight.
+
+## V5 Changes
+
+### V5
+
+- Removed the semi-transparent black FPS background.
+- Added white text with a subtle black shadow.
+- Displays FPS and frame time.
+- Uses the game's existing window instead of creating a separate alert-level window.
+- Added a delayed startup so the game has time to initialize its UI.
+- Added retry logic if the game window is not immediately available.
+
+## Important Notes
+
+FPSOverlay is a display-only tweak.
+
+It does **not** intentionally:
+
+- Download game files
+- Delete game files
+- Modify game assets
+- Modify save data
+- Change network settings
+- Unlock FPS
+- Change the game's graphics settings
+
+If a game starts downloading its resources after enabling the tweak, that behavior should be investigated separately from the FPS calculation.
+
+## Troubleshooting
+
+### FPS counter does not appear
+
+Check:
+
+1. `FPSOverlay.dylib` is enabled.
+2. The tweak is assigned to the correct game.
+3. The game is launched through LiveContainer.
+4. LiveContainer successfully signs/loads the tweak.
+5. Restart the game after changing the tweak.
+
+### Game behaves differently with the tweak enabled
+
+Disable the tweak and test again.
+
+If the game works normally with the tweak disabled but behaves differently when enabled, collect the LiveContainer error/log information before rebuilding the tweak.
 
 ## Project Structure
 
@@ -182,66 +192,23 @@ FPSOverlay-LiveContainer/
 ├── Makefile
 ├── control
 ├── README.md
-├── LICENSE
 │
 └── .github/
     └── workflows/
         └── build.yml
 ```
 
-## Architecture
-
-The current build targets:
-
-```text
-arm64
-```
-
-for compatible 64-bit ARM iOS devices.
-
-## Contributing
-
-Pull requests and improvements are welcome.
-
-If you find a compatibility problem, please open an issue and provide:
-
-- iOS version
-- Device model
-- LiveContainer version
-- Game/application name
-- Game/application version
-- Description of the problem
-
-## Disclaimer
-
-This project is provided for educational and performance-monitoring purposes.
-
-Use tweaks at your own risk. The author is not responsible for crashes, data loss, application instability, account restrictions, or other problems resulting from the use of this software.
-
 ## License
 
-This project is licensed under the MIT License.
+This project is provided for educational and personal-use purposes.
 
-See [LICENSE](LICENSE) for details.
+Use it only with applications and games you are authorized to modify or run with tweaks.
 
-MIT License
+## Credits
 
-Copyright (c) 2026 fazilprogrmr-svg
+Built for use with:
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+- [LiveContainer](https://github.com/LiveContainer/LiveContainer)
+- [Theos](https://theos.dev/)
 
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
+FPSOverlay is an independent project and is not affiliated with or endorsed by the LiveContainer or Theos projects.
