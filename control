@@ -1,8 +1,8 @@
 Package: com.fazil.fpsoverlay
 Name: FPSOverlay
-Version: 5.0
+Version: 6.0
 Architecture: iphoneos-arm64
-Description: Simple text-only FPS and frame-time overlay for LiveContainer.
+Description: Lightweight FPS and performance monitor for LiveContainer.
 Maintainer: Fazil
 Author: Fazil
 Section: Tweaks

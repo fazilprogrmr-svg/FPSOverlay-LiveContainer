@@ -1,85 +1,43 @@
 # FPSOverlay for LiveContainer
 
-A lightweight FPS and frame-time overlay for iOS games running through LiveContainer.
-
-## Download
-
-### Latest Release
-
-Download the latest **`FPSOverlay.dylib`** from the Releases section.
-
-The release contains the ready-to-use `.dylib` file. No source build is required.
+A lightweight Game Performance Monitor for iOS games running through LiveContainer.
 
 ## Features
-
-- Live FPS counter
-- Frame time in milliseconds
-- Text-only overlay
-- No background box
-- White text with subtle black shadow
-- Lightweight
+- Live FPS and frame time
+- Average, minimum and maximum FPS
+- 1% low and 0.1% low FPS
+- Guest-process RAM usage
+- Battery percentage
+- Automatic reattachment when a game changes windows
+- Text-only HUD
 - ARM64
-- Designed for LiveContainer TweakLoader
 
-## Display
+## Example
+```text
+FPS  59.8   16.72 ms
+AVG  59.5  MIN  55.1
+MAX  60.0  1% LOW  52.4
+0.1% LOW 49.8
+RAM  842 MB  BAT  78%
+```
 
-The overlay looks like:
-
-FPS 32.7  
-30.57 ms
+## Download
+Download the latest `FPSOverlay.dylib` directly from GitHub Releases.
 
 ## Installation
+1. Download `FPSOverlay.dylib`.
+2. Add it to the LiveContainer Tweak folder.
+3. Enable it.
+4. Assign the folder to the game.
+5. Launch the game.
 
-1. Download `FPSOverlay.dylib` from the latest Release.
-2. Open LiveContainer.
-3. Add the `.dylib` to your Tweak folder.
-4. Enable `FPSOverlay.dylib`.
-5. Assign the tweak folder to your game if using an app-specific folder.
-6. Launch the game.
-
-The FPS overlay should appear after the game starts.
+## Notes
+FPS is estimated from `CADisplayLink`. RAM is the guest process resident memory. Battery uses Apple's public `UIDevice` battery API. GPU usage, CPU temperature, and internal renderer FPS are not guessed because iOS does not provide one reliable public API for them.
 
 ## Build
+GitHub Actions → **Build and Release FPSOverlay** → **Run workflow**.
 
-This project uses Theos and GitHub Actions.
+The release contains the actual `FPSOverlay.dylib` file.
 
-To create a new release:
-
-1. Open the **Actions** tab.
-2. Select **Build and Release FPSOverlay**.
-3. Click **Run workflow**.
-4. GitHub automatically builds the ARM64 `.dylib`.
-5. A new GitHub Release is automatically created.
-6. `FPSOverlay.dylib` is attached directly to the Release.
-
-## V5.1 Changes
-
-- Removed the black background.
-- Added text-only FPS display.
-- Added subtle text shadow.
-- Uses the game's existing normal window.
-- Removed deprecated `UIApplication.windows` API usage.
-- Improved compatibility with modern iOS SDKs.
-
-## Important
-
-FPSOverlay is a display-only tweak.
-
-It does not intentionally:
-
-- Download game files
-- Delete game files
-- Modify game assets
-- Modify save data
-- Change network settings
-- Unlock FPS
-- Change graphics settings
-
-## Credits
-
-Built for use with:
-
-- LiveContainer
-- Theos
-
-FPSOverlay is an independent project and is not affiliated with or endorsed by LiveContainer or Theos.
+## License
+MIT. Independent project; not affiliated with LiveContainer or Theos.
