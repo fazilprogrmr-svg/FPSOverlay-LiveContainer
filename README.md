@@ -33,18 +33,8 @@ A compact, Steam Deck / MangoHud-inspired HUD that displays real-time gaming per
 - ✅ Alien: Isolation
 - ✅ Other LiveContainer games
 
-## 💖 Support the Project
+⭐ **Like FPSOverlay? Drop a star on GitHub! It helps a lot.** ❤️
 
-If you find **FPSOverlay** useful and want to support future development, you can leave a small donation.
-
-Every bit of support helps with testing, development, and improving compatibility.
-
-### ☕ Support
-
-**Buy Me a Coffee:**  
-[☕ Support FPSOverlay](YOUR_DONATION_LINK)
-
-Thank you for supporting the project! ❤️
 
 ## 📊 HUD
 
