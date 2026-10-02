@@ -5,18 +5,18 @@
 #import <float.h>
 #import <string.h>
 
-#define FPS_HISTORY_SIZE 240
+#define FPS_HISTORY_SIZE 120
+#define CPU_SAMPLE_INTERVAL 0.5
 
 @interface FPSOverlayController : NSObject
 {
     UILabel *_label;
-    UILabel *_deviceLabel;
-
     UIWindow *_hostWindow;
 
     CADisplayLink *_displayLink;
     NSTimer *_refreshTimer;
     NSTimer *_batteryTimer;
+    NSTimer *_cpuTimer;
 
     CFTimeInterval _lastTimestamp;
     NSInteger _frameCount;
@@ -24,10 +24,11 @@
     double _fpsHistory[FPS_HISTORY_SIZE];
     NSInteger _historyCount;
 
-    double _sumFPS;
-    NSInteger _sampleCount;
-    double _minFPS;
-    double _maxFPS;
+    double _cpuPercent;
+    uint64_t _previousUserTime;
+    uint64_t _previousSystemTime;
+    uint64_t _previousWallTime;
+    BOOL _hasCPUBase;
 
     BOOL _started;
 }
@@ -40,26 +41,19 @@
 - (id)init
 {
     self = [super init];
-
     if (self) {
         _lastTimestamp = 0.0;
         _frameCount = 0;
         _historyCount = 0;
-        _sumFPS = 0.0;
-        _sampleCount = 0;
-        _minFPS = DBL_MAX;
-        _maxFPS = 0.0;
+        _cpuPercent = 0.0;
+        _previousUserTime = 0;
+        _previousSystemTime = 0;
+        _previousWallTime = 0;
+        _hasCPUBase = NO;
         _started = NO;
 
-        /*
-         * Battery monitoring is enabled immediately.
-         * The separate timer below re-reads the battery level
-         * periodically instead of relying only on Apple's
-         * battery-change notification.
-         */
         [UIDevice currentDevice].batteryMonitoringEnabled = YES;
     }
-
     return self;
 }
 
@@ -67,10 +61,10 @@
 {
     [_refreshTimer invalidate];
     [_batteryTimer invalidate];
+    [_cpuTimer invalidate];
     [_displayLink invalidate];
-
+    [_label removeFromSuperview];
     [[NSNotificationCenter defaultCenter] removeObserver:self];
-
     [super dealloc];
 }
 
@@ -79,60 +73,42 @@
 - (NSString *)deviceModel
 {
     size_t size = 0;
-
     sysctlbyname("hw.machine", NULL, &size, NULL, 0);
-
-    if (size == 0) {
-        return @"iPhone";
-    }
+    if (size == 0) return @"iPhone";
 
     char *machine = malloc(size);
-
-    if (!machine) {
-        return @"iPhone";
-    }
+    if (!machine) return @"iPhone";
 
     sysctlbyname("hw.machine", machine, &size, NULL, 0);
-
-    NSString *identifier =
-        [NSString stringWithUTF8String:machine];
-
+    NSString *identifier = [NSString stringWithUTF8String:machine];
     free(machine);
 
-    if (!identifier) {
-        return @"iPhone";
-    }
+    if (!identifier) return @"iPhone";
 
     NSDictionary *models = @{
         @"iPhone12,1": @"iPhone 11",
         @"iPhone12,3": @"iPhone 11 Pro",
         @"iPhone12,5": @"iPhone 11 Pro Max",
-
         @"iPhone13,1": @"iPhone 12 mini",
         @"iPhone13,2": @"iPhone 12",
         @"iPhone13,3": @"iPhone 12 Pro",
         @"iPhone13,4": @"iPhone 12 Pro Max",
-
         @"iPhone14,4": @"iPhone 13 mini",
         @"iPhone14,5": @"iPhone 13",
         @"iPhone14,2": @"iPhone 13 Pro",
         @"iPhone14,3": @"iPhone 13 Pro Max",
-
         @"iPhone14,7": @"iPhone 14",
         @"iPhone14,8": @"iPhone 14 Plus",
         @"iPhone15,2": @"iPhone 14 Pro",
         @"iPhone15,3": @"iPhone 14 Pro Max",
-
         @"iPhone15,4": @"iPhone 15",
         @"iPhone15,5": @"iPhone 15 Plus",
         @"iPhone16,1": @"iPhone 15 Pro",
         @"iPhone16,2": @"iPhone 15 Pro Max",
-
         @"iPhone17,1": @"iPhone 16 Pro",
         @"iPhone17,2": @"iPhone 16 Pro Max",
         @"iPhone17,3": @"iPhone 16",
         @"iPhone17,4": @"iPhone 16 Plus",
-
         @"iPhone18,1": @"iPhone 17 Pro",
         @"iPhone18,2": @"iPhone 17 Pro Max",
         @"iPhone18,3": @"iPhone 17",
@@ -140,169 +116,258 @@
     };
 
     NSString *name = [models objectForKey:identifier];
+    return name ? name : identifier;
+}
 
-    if (name) {
-        return name;
-    }
+- (NSString *)cpuName
+{
+    NSString *model = [self deviceModel];
 
-    return identifier;
+    if ([model hasPrefix:@"iPhone 11"]) return @"A13";
+    if ([model hasPrefix:@"iPhone 12"]) return @"A14";
+    if ([model isEqualToString:@"iPhone 13"] ||
+        [model isEqualToString:@"iPhone 13 mini"] ||
+        [model isEqualToString:@"iPhone 13 Pro"] ||
+        [model isEqualToString:@"iPhone 13 Pro Max"]) return @"A15";
+    if ([model isEqualToString:@"iPhone 14"] ||
+        [model isEqualToString:@"iPhone 14 Plus"]) return @"A15";
+    if ([model isEqualToString:@"iPhone 14 Pro"] ||
+        [model isEqualToString:@"iPhone 14 Pro Max"]) return @"A16";
+    if ([model isEqualToString:@"iPhone 15"] ||
+        [model isEqualToString:@"iPhone 15 Plus"]) return @"A16";
+    if ([model hasPrefix:@"iPhone 15 Pro"]) return @"A17 Pro";
+    if ([model hasPrefix:@"iPhone 16"]) return @"A18";
+    if ([model hasPrefix:@"iPhone 17"]) return @"A19";
+    if ([model isEqualToString:@"iPhone Air"]) return @"Apple Silicon";
+
+    return @"Apple CPU";
 }
 
 - (NSString *)gpuName
 {
-    /*
-     * No Metal dependency here.
-     * Keep GPU detection lightweight for compatibility.
-     */
     NSString *model = [self deviceModel];
 
-    if ([model isEqualToString:@"iPhone 11"] ||
-        [model isEqualToString:@"iPhone 11 Pro"] ||
-        [model isEqualToString:@"iPhone 11 Pro Max"]) {
-        return @"Apple A13 GPU";
-    }
-
-    if ([model hasPrefix:@"iPhone 12"]) {
-        return @"Apple A14 GPU";
-    }
-
-    if ([model isEqualToString:@"iPhone 13"] ||
-        [model isEqualToString:@"iPhone 13 mini"] ||
-        [model isEqualToString:@"iPhone 13 Pro"] ||
-        [model isEqualToString:@"iPhone 13 Pro Max"]) {
-        return @"Apple A15 GPU";
-    }
-
-    if ([model hasPrefix:@"iPhone 14"]) {
-        if ([model isEqualToString:@"iPhone 14 Pro"] ||
-            [model isEqualToString:@"iPhone 14 Pro Max"]) {
-            return @"Apple A16 GPU";
-        }
-
-        return @"Apple A15 GPU";
-    }
-
-    if ([model hasPrefix:@"iPhone 15"]) {
-        if ([model isEqualToString:@"iPhone 15 Pro"] ||
-            [model isEqualToString:@"iPhone 15 Pro Max"]) {
-            return @"Apple A17 Pro GPU";
-        }
-
-        return @"Apple A16 GPU";
-    }
-
-    if ([model hasPrefix:@"iPhone 16"]) {
-        return @"Apple A18 GPU";
-    }
-
-    if ([model hasPrefix:@"iPhone 17"]) {
-        return @"Apple GPU";
-    }
-
-    if ([model isEqualToString:@"iPhone Air"]) {
-        return @"Apple GPU";
-    }
-
+    if ([model hasPrefix:@"iPhone 11"]) return @"A13 GPU";
+    if ([model hasPrefix:@"iPhone 12"]) return @"A14 GPU";
+    if ([model hasPrefix:@"iPhone 13"]) return @"A15 GPU";
+    if ([model isEqualToString:@"iPhone 14"] || [model isEqualToString:@"iPhone 14 Plus"]) return @"A15 GPU";
+    if ([model hasPrefix:@"iPhone 14 Pro"]) return @"A16 GPU";
+    if ([model hasPrefix:@"iPhone 15 Pro"]) return @"A17 GPU";
+    if ([model hasPrefix:@"iPhone 15"]) return @"A16 GPU";
+    if ([model hasPrefix:@"iPhone 16"]) return @"A18 GPU";
+    if ([model hasPrefix:@"iPhone 17"]) return @"A19 GPU";
     return @"Apple GPU";
 }
 
-#pragma mark - Battery
-
-- (double)batteryPercentage
+- (NSInteger)cpuCoreCount
 {
-    /*
-     * IMPORTANT:
-     * Read the value every time this method is called.
-     * We don't cache it.
-     */
-    UIDevice *device = [UIDevice currentDevice];
-
-    if (!device.batteryMonitoringEnabled) {
-        device.batteryMonitoringEnabled = YES;
-    }
-
-    float level = device.batteryLevel;
-
-    if (level < 0.0f) {
-        return -1.0;
-    }
-
-    return (double)level * 100.0;
+    int cores = 0;
+    size_t size = sizeof(cores);
+    if (sysctlbyname("hw.ncpu", &cores, &size, NULL, 0) == 0 && cores > 0) return cores;
+    return 0;
 }
+
+#pragma mark - CPU
+
+- (void)sampleCPU:(NSTimer *)timer
+{
+    task_thread_times_info_data_t times;
+    mach_msg_type_number_t count = TASK_THREAD_TIMES_INFO_COUNT;
+
+    kern_return_t kr = task_info(mach_task_self(),
+                                 TASK_THREAD_TIMES_INFO,
+                                 (task_info_t)&times,
+                                 &count);
+    if (kr != KERN_SUCCESS) return;
+
+    uint64_t user = ((uint64_t)times.user_time.seconds * 1000000ULL) +
+                    (uint64_t)times.user_time.microseconds;
+    uint64_t system = ((uint64_t)times.system_time.seconds * 1000000ULL) +
+                      (uint64_t)times.system_time.microseconds;
+
+    CFTimeInterval now = CACurrentMediaTime();
+    uint64_t wall = (uint64_t)(now * 1000000.0);
+
+    if (_hasCPUBase) {
+        uint64_t cpuDelta = (user - _previousUserTime) +
+                            (system - _previousSystemTime);
+        uint64_t wallDelta = wall - _previousWallTime;
+
+        if (wallDelta > 0) {
+            double percent = ((double)cpuDelta / (double)wallDelta) * 100.0;
+            NSInteger cores = [self cpuCoreCount];
+
+            if (cores > 0) {
+                /* task time can exceed 100% when several threads run at once. */
+                percent = percent / (double)cores;
+            }
+
+            if (percent < 0.0) percent = 0.0;
+            if (percent > 100.0) percent = 100.0;
+            _cpuPercent = percent;
+        }
+    }
+
+    _previousUserTime = user;
+    _previousSystemTime = system;
+    _previousWallTime = wall;
+    _hasCPUBase = YES;
+
+    [self updateLabel];
+}
+
+#pragma mark - Memory
+
+- (double)ramMB
+{
+    mach_task_basic_info_data_t info;
+    mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
+
+    kern_return_t result = task_info(mach_task_self(),
+                                     MACH_TASK_BASIC_INFO,
+                                     (task_info_t)&info,
+                                     &count);
+    if (result != KERN_SUCCESS) return 0.0;
+
+    return (double)info.resident_size / (1024.0 * 1024.0);
+}
+
+- (double)totalRAMGB
+{
+    uint64_t bytes = [NSProcessInfo processInfo].physicalMemory;
+    return (double)bytes / (1024.0 * 1024.0 * 1024.0);
+}
+
+#pragma mark - Battery / display
 
 - (NSString *)batteryText
 {
-    double level = [self batteryPercentage];
+    UIDevice *device = [UIDevice currentDevice];
+    device.batteryMonitoringEnabled = YES;
+    float level = device.batteryLevel;
 
-    if (level < 0.0) {
-        return @"BAT --";
-    }
-
-    UIDeviceBatteryState state =
-        [UIDevice currentDevice].batteryState;
-
-    if (state == UIDeviceBatteryStateCharging ||
-        state == UIDeviceBatteryStateFull) {
-
-        return [NSString stringWithFormat:
-                    @"BAT %3.0f%% ⚡", level];
-    }
-
-    return [NSString stringWithFormat:
-                @"BAT %3.0f%%", level];
+    if (level < 0.0f) return @"--";
+    return [NSString stringWithFormat:@"%.0f%%", level * 100.0f];
 }
 
-- (void)batteryTimerTick
+- (double)refreshRate
 {
-    /*
-     * Re-enable monitoring and read the actual current
-     * battery value every 5 seconds.
-     */
-    [UIDevice currentDevice].batteryMonitoringEnabled = YES;
-
-    [self updateLabels];
+    if (@available(iOS 10.3, *)) {
+        if (_hostWindow && _hostWindow.screen) {
+            return _hostWindow.screen.maximumFramesPerSecond;
+        }
+    }
+    return 60.0;
 }
 
-#pragma mark - Window
+#pragma mark - FPS graph
+
+- (NSString *)tinyGraph
+{
+    if (_historyCount < 2) return @"▁▁▁▁▁▁▁▁";
+
+    static NSString *blocks = @"▁▂▃▄▅▆▇█";
+    NSInteger graphCount = 8;
+    NSMutableString *graph = [NSMutableString stringWithCapacity:graphCount];
+
+    NSInteger start = _historyCount > graphCount ? (_historyCount - graphCount) : 0;
+    NSInteger count = _historyCount - start;
+
+    double minValue = DBL_MAX;
+    double maxValue = 0.0;
+
+    for (NSInteger i = start; i < _historyCount; i++) {
+        double v = _fpsHistory[i];
+        if (v < minValue) minValue = v;
+        if (v > maxValue) maxValue = v;
+    }
+
+    double range = maxValue - minValue;
+    if (range < 0.1) range = 1.0;
+
+    for (NSInteger i = 0; i < count; i++) {
+        double v = _fpsHistory[start + i];
+        NSInteger index = (NSInteger)floor(((v - minValue) / range) * 7.0 + 0.5);
+        if (index < 0) index = 0;
+        if (index > 7) index = 7;
+        unichar c = [blocks characterAtIndex:index];
+        [graph appendFormat:@"%C", c];
+    }
+
+    while ([graph length] < graphCount) {
+        [graph insertString:@"▁" atIndex:0];
+    }
+
+    return graph;
+}
+
+#pragma mark - UI
+
+- (UILabel *)makeLabel
+{
+    UILabel *label = [[UILabel alloc] init];
+    label.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.52];
+    label.layer.cornerRadius = 4.0;
+    label.layer.masksToBounds = YES;
+    label.font = [UIFont monospacedDigitSystemFontOfSize:9.0 weight:UIFontWeightSemibold];
+    label.numberOfLines = 1;
+    label.textAlignment = NSTextAlignmentLeft;
+    label.userInteractionEnabled = NO;
+    label.adjustsFontSizeToFitWidth = YES;
+    label.minimumScaleFactor = 0.45;
+    label.lineBreakMode = NSLineBreakByClipping;
+    label.translatesAutoresizingMaskIntoConstraints = NO;
+    label.layer.shadowColor = UIColor.blackColor.CGColor;
+    label.layer.shadowOffset = CGSizeMake(0.5, 0.5);
+    label.layer.shadowOpacity = 0.9;
+    label.layer.shadowRadius = 1.0;
+    return label;
+}
+
+- (void)createOverlayOnWindow:(UIWindow *)window
+{
+    [_label removeFromSuperview];
+    [_label release];
+    _label = nil;
+
+    _hostWindow = window;
+    _label = [self makeLabel];
+    [window addSubview:_label];
+
+    [NSLayoutConstraint activateConstraints:@[
+        [_label.leadingAnchor constraintEqualToAnchor:window.leadingAnchor constant:10.0],
+        [_label.topAnchor constraintEqualToAnchor:window.safeAreaLayoutGuide.topAnchor constant:3.0],
+        [_label.trailingAnchor constraintLessThanOrEqualToAnchor:window.trailingAnchor constant:-10.0],
+        [_label.heightAnchor constraintEqualToConstant:19.0]
+    ]];
+
+    [self updateLabel];
+}
 
 - (UIWindow *)findGameWindow
 {
     if (@available(iOS 13.0, *)) {
-
-        NSSet<UIScene *> *scenes =
-            UIApplication.sharedApplication.connectedScenes;
+        NSSet<UIScene *> *scenes = UIApplication.sharedApplication.connectedScenes;
 
         for (UIScene *scene in scenes) {
-
             if (scene.activationState != UISceneActivationStateForegroundActive &&
                 scene.activationState != UISceneActivationStateForegroundInactive) {
                 continue;
             }
 
-            if (![scene isKindOfClass:[UIWindowScene class]]) {
-                continue;
-            }
-
-            UIWindowScene *windowScene =
-                (UIWindowScene *)scene;
+            if (![scene isKindOfClass:[UIWindowScene class]]) continue;
+            UIWindowScene *windowScene = (UIWindowScene *)scene;
 
             for (UIWindow *window in windowScene.windows) {
-
-                if (!window.hidden &&
-                    window.alpha > 0.01 &&
-                    window.windowLevel == UIWindowLevelNormal &&
-                    window.isKeyWindow) {
-
+                if (!window.hidden && window.alpha > 0.01 &&
+                    window.windowLevel == UIWindowLevelNormal && window.isKeyWindow) {
                     return window;
                 }
             }
 
             for (UIWindow *window in windowScene.windows) {
-
-                if (!window.hidden &&
-                    window.alpha > 0.01 &&
+                if (!window.hidden && window.alpha > 0.01 &&
                     window.windowLevel == UIWindowLevelNormal) {
-
                     return window;
                 }
             }
@@ -312,131 +377,96 @@
     return nil;
 }
 
-#pragma mark - UI
+#pragma mark - Labels
 
-- (UILabel *)makeLabel
+- (void)updateLabel
 {
-    UILabel *label = [[UILabel alloc] init];
+    if (!_label) return;
 
-    label.textColor =
-        [UIColor colorWithWhite:1.0 alpha:0.95];
+    double fps = 0.0;
+    if (_historyCount > 0) fps = _fpsHistory[_historyCount - 1];
 
-    label.backgroundColor =
-        UIColor.clearColor;
+    NSString *cpu = [self cpuName];
+    NSString *gpu = [self gpuName];
+    NSInteger cores = [self cpuCoreCount];
+    double ram = [self ramMB];
+    double totalRAM = [self totalRAMGB];
+    NSString *battery = [self batteryText];
+    double hz = [self refreshRate];
+    NSString *graph = [self tinyGraph];
+
+    NSString *ramText;
+    if (ram >= 1024.0) {
+        ramText = [NSString stringWithFormat:@"%.1fG/%.1fG", ram / 1024.0, totalRAM];
+    } else {
+        ramText = [NSString stringWithFormat:@"%.0fM/%.1fG", ram, totalRAM];
+    }
+
+    NSString *cpuText = cores > 0
+        ? [NSString stringWithFormat:@"CPU %@ %.0f%%", cpu, _cpuPercent]
+        : [NSString stringWithFormat:@"CPU %@ %.0f%%", cpu, _cpuPercent];
 
     /*
-     * Steam Deck / MangoHud-inspired compact terminal style.
+     * GPU utilization and device-wide wattage are intentionally not guessed.
+     * We display -- until a genuine runtime measurement is available.
      */
-    label.font =
-        [UIFont monospacedDigitSystemFontOfSize:12.0
-                                         weight:UIFontWeightSemibold];
+    NSString *gpuText = [NSString stringWithFormat:@"GPU %@ --%%", gpu];
+    NSString *powerText = @"PWR --";
 
-    label.numberOfLines = 0;
-    label.textAlignment = NSTextAlignmentLeft;
-    label.userInteractionEnabled = NO;
+    NSString *plain = [NSString stringWithFormat:
+        @"FPS %.0f | %@ | %@ | RAM %@ | BATT %@ | %@ | HZ %.0f | %@",
+        fps, cpuText, gpuText, ramText, battery, powerText, hz, graph];
 
-    /*
-     * Thin outline/shadow keeps text readable on bright scenes
-     * without creating a box behind the overlay.
-     */
-    label.layer.shadowColor =
-        UIColor.blackColor.CGColor;
+    NSMutableAttributedString *styled =
+        [[[NSMutableAttributedString alloc] initWithString:plain] autorelease];
 
-    label.layer.shadowOffset =
-        CGSizeMake(1.0, 1.0);
+    UIColor *white = [UIColor colorWithWhite:0.95 alpha:1.0];
+    UIColor *cyan = [UIColor colorWithRed:0.25 green:0.85 blue:1.0 alpha:1.0];
+    UIColor *green = [UIColor colorWithRed:0.35 green:1.0 blue:0.55 alpha:1.0];
+    UIColor *pink = [UIColor colorWithRed:1.0 green:0.35 blue:0.65 alpha:1.0];
+    UIColor *orange = [UIColor colorWithRed:1.0 green:0.70 blue:0.25 alpha:1.0];
+    UIColor *purple = [UIColor colorWithRed:0.75 green:0.55 blue:1.0 alpha:1.0];
 
-    label.layer.shadowOpacity = 0.95;
-    label.layer.shadowRadius = 1.5;
+    [styled addAttribute:NSForegroundColorAttributeName value:white range:NSMakeRange(0, [plain length])];
 
-    label.translatesAutoresizingMaskIntoConstraints = NO;
+    NSRange r;
+    r = [plain rangeOfString:@"FPS"]; if (r.location != NSNotFound) [styled addAttribute:NSForegroundColorAttributeName value:cyan range:r];
+    r = [plain rangeOfString:@"CPU"]; if (r.location != NSNotFound) [styled addAttribute:NSForegroundColorAttributeName value:cyan range:r];
+    r = [plain rangeOfString:@"GPU"]; if (r.location != NSNotFound) [styled addAttribute:NSForegroundColorAttributeName value:green range:r];
+    r = [plain rangeOfString:@"RAM"]; if (r.location != NSNotFound) [styled addAttribute:NSForegroundColorAttributeName value:purple range:r];
+    r = [plain rangeOfString:@"BATT"]; if (r.location != NSNotFound) [styled addAttribute:NSForegroundColorAttributeName value:pink range:r];
+    r = [plain rangeOfString:@"PWR"]; if (r.location != NSNotFound) [styled addAttribute:NSForegroundColorAttributeName value:orange range:r];
+    r = [plain rangeOfString:@"HZ"]; if (r.location != NSNotFound) [styled addAttribute:NSForegroundColorAttributeName value:purple range:r];
 
-    return label;
+    _label.attributedText = styled;
 }
 
-- (void)createOverlayOnWindow:(UIWindow *)window
+#pragma mark - Window / start
+
+- (void)batteryTimerTick:(NSTimer *)timer
 {
-    [_label removeFromSuperview];
-    [_deviceLabel removeFromSuperview];
+    [self updateLabel];
+}
 
-    _hostWindow = window;
-
-    _label = [self makeLabel];
-    _deviceLabel = [self makeLabel];
-
-    _deviceLabel.font =
-        [UIFont monospacedDigitSystemFontOfSize:11.0
-                                         weight:UIFontWeightSemibold];
-
-    [window addSubview:_label];
-    [window addSubview:_deviceLabel];
-
-    /*
-     * Compact horizontal MangoHud-style layout.
-     *
-     * Top-left, minimal vertical footprint.
-     */
-    [NSLayoutConstraint activateConstraints:@[
-
-        [_label.leadingAnchor
-            constraintEqualToAnchor:window.leadingAnchor
-            constant:18.0],
-
-        [_label.topAnchor
-            constraintEqualToAnchor:window.safeAreaLayoutGuide.topAnchor
-            constant:5.0],
-
-        [_label.trailingAnchor
-            constraintLessThanOrEqualToAnchor:window.trailingAnchor
-            constant:-18.0],
-
-        [_label.heightAnchor
-            constraintEqualToConstant:23.0],
-
-        [_deviceLabel.leadingAnchor
-            constraintEqualToAnchor:_label.leadingAnchor],
-
-        [_deviceLabel.topAnchor
-            constraintEqualToAnchor:_label.bottomAnchor
-            constant:1.0],
-
-        [_deviceLabel.trailingAnchor
-            constraintLessThanOrEqualToAnchor:window.trailingAnchor
-            constant:-18.0],
-
-        [_deviceLabel.heightAnchor
-            constraintEqualToConstant:20.0]
-    ]];
-
-    [self updateLabels];
+- (void)refreshWindowTimer:(NSTimer *)timer
+{
+    [self refreshWindow];
 }
 
 - (void)refreshWindow
 {
     UIWindow *window = [self findGameWindow];
+    if (!window) return;
 
-    if (!window) {
-        return;
-    }
-
-    if (_hostWindow != window ||
-        _label.superview != window ||
-        _deviceLabel.superview != window) {
-
+    if (_hostWindow != window || _label.superview != window) {
         [self createOverlayOnWindow:window];
     }
 
     if (!_displayLink) {
-
-        _displayLink =
-            [CADisplayLink displayLinkWithTarget:self
-                                        selector:@selector(frameTick:)];
-
-        [_displayLink addToRunLoop:NSRunLoop.mainRunLoop
-                           forMode:NSRunLoopCommonModes];
+        _displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(frameTick:)];
+        [_displayLink addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
     }
 }
-
-#pragma mark - Start
 
 - (void)start
 {
@@ -446,52 +476,37 @@
     }
 
     _started = YES;
-
-    /*
-     * Battery monitoring is enabled before the first UI update.
-     */
     [UIDevice currentDevice].batteryMonitoringEnabled = YES;
 
-    /*
-     * Battery update timer.
-     * This does not depend on battery-change notifications.
-     */
-    _batteryTimer =
-        [NSTimer scheduledTimerWithTimeInterval:5.0
-                                         target:self
-                                       selector:@selector(batteryTimerTick)
-                                       userInfo:nil
-                                        repeats:YES];
+    _batteryTimer = [NSTimer scheduledTimerWithTimeInterval:3.0
+                                                      target:self
+                                                    selector:@selector(batteryTimerTick:)
+                                                    userInfo:nil
+                                                     repeats:YES];
 
-    /*
-     * Battery notification is an additional update path.
-     */
-    [[NSNotificationCenter defaultCenter]
-        addObserver:self
-           selector:@selector(batteryTimerTick)
-               name:UIDeviceBatteryLevelDidChangeNotification
-             object:nil];
+    _cpuTimer = [NSTimer scheduledTimerWithTimeInterval:CPU_SAMPLE_INTERVAL
+                                                  target:self
+                                                selector:@selector(sampleCPU:)
+                                                userInfo:nil
+                                                 repeats:YES];
 
-    /*
-     * Delay initial overlay attachment for game compatibility.
-     */
-    dispatch_after(
-        dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC),
-        dispatch_get_main_queue(),
-        ^{
-            [self refreshWindow];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(updateLabel)
+                                                 name:UIDeviceBatteryLevelDidChangeNotification
+                                               object:nil];
 
-            if (!self->_refreshTimer) {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC),
+                   dispatch_get_main_queue(), ^{
+        [self refreshWindow];
 
-                self->_refreshTimer =
-                    [NSTimer scheduledTimerWithTimeInterval:2.0
-                                                     target:self
-                                                   selector:@selector(refreshWindow)
-                                                   userInfo:nil
-                                                    repeats:YES];
-            }
+        if (!self->_refreshTimer) {
+            self->_refreshTimer = [NSTimer scheduledTimerWithTimeInterval:2.0
+                                                                     target:self
+                                                                   selector:@selector(refreshWindowTimer:)
+                                                                   userInfo:nil
+                                                                    repeats:YES];
         }
-    );
+    });
 }
 
 #pragma mark - FPS
@@ -499,223 +514,29 @@
 - (void)frameTick:(CADisplayLink *)link
 {
     if (_lastTimestamp == 0.0) {
-
         _lastTimestamp = link.timestamp;
         _frameCount = 0;
-
         return;
     }
 
     _frameCount++;
+    CFTimeInterval elapsed = link.timestamp - _lastTimestamp;
+    if (elapsed < 0.5) return;
 
-    CFTimeInterval elapsed =
-        link.timestamp - _lastTimestamp;
-
-    if (elapsed < 0.5) {
-        return;
-    }
-
-    double fps =
-        (double)_frameCount / elapsed;
+    double fps = (double)_frameCount / elapsed;
 
     if (fps > 0.0 && fps < 240.0) {
-
         if (_historyCount < FPS_HISTORY_SIZE) {
-
-            _fpsHistory[_historyCount] = fps;
-            _historyCount++;
-
+            _fpsHistory[_historyCount++] = fps;
         } else {
-
-            memmove(
-                &_fpsHistory[0],
-                &_fpsHistory[1],
-                sizeof(double) * (FPS_HISTORY_SIZE - 1)
-            );
-
+            memmove(&_fpsHistory[0], &_fpsHistory[1], sizeof(double) * (FPS_HISTORY_SIZE - 1));
             _fpsHistory[FPS_HISTORY_SIZE - 1] = fps;
         }
-
-        _sumFPS += fps;
-        _sampleCount++;
-
-        if (fps < _minFPS) {
-            _minFPS = fps;
-        }
-
-        if (fps > _maxFPS) {
-            _maxFPS = fps;
-        }
-
-        [self updateLabels];
+        [self updateLabel];
     }
 
     _frameCount = 0;
     _lastTimestamp = link.timestamp;
-}
-
-#pragma mark - Statistics
-
-- (double)currentFPS
-{
-    if (_historyCount <= 0) {
-        return 0.0;
-    }
-
-    return _fpsHistory[_historyCount - 1];
-}
-
-- (double)averageFPS
-{
-    if (_sampleCount <= 0) {
-        return 0.0;
-    }
-
-    return _sumFPS / (double)_sampleCount;
-}
-
-- (double)percentile:(double)percent
-{
-    if (_historyCount < 2) {
-        return 0.0;
-    }
-
-    double sorted[FPS_HISTORY_SIZE];
-
-    memcpy(
-        sorted,
-        _fpsHistory,
-        sizeof(double) * _historyCount
-    );
-
-    for (NSInteger i = 1; i < _historyCount; i++) {
-
-        double key = sorted[i];
-        NSInteger j = i - 1;
-
-        while (j >= 0 && sorted[j] > key) {
-            sorted[j + 1] = sorted[j];
-            j--;
-        }
-
-        sorted[j + 1] = key;
-    }
-
-    double position =
-        ((double)(_historyCount - 1)) * percent;
-
-    NSInteger index =
-        (NSInteger)floor(position);
-
-    if (index < 0) {
-        index = 0;
-    }
-
-    if (index >= _historyCount) {
-        index = _historyCount - 1;
-    }
-
-    return sorted[index];
-}
-
-- (double)memoryMB
-{
-    mach_task_basic_info_data_t info;
-
-    mach_msg_type_number_t count =
-        MACH_TASK_BASIC_INFO_COUNT;
-
-    kern_return_t result =
-        task_info(
-            mach_task_self(),
-            MACH_TASK_BASIC_INFO,
-            (task_info_t)&info,
-            &count
-        );
-
-    if (result != KERN_SUCCESS) {
-        return 0.0;
-    }
-
-    return (double)info.resident_size /
-           (1024.0 * 1024.0);
-}
-
-- (double)refreshRate
-{
-    if (@available(iOS 10.3, *)) {
-
-        if (_hostWindow &&
-            _hostWindow.screen) {
-
-            return _hostWindow.screen.maximumFramesPerSecond;
-        }
-    }
-
-    return 60.0;
-}
-
-#pragma mark - Labels
-
-- (void)updateLabels
-{
-    if (!_label || !_deviceLabel) {
-        return;
-    }
-
-    double fps = [self currentFPS];
-
-    double frameTime =
-        fps > 0.0 ?
-        (1000.0 / fps) :
-        0.0;
-
-    double avg =
-        [self averageFPS];
-
-    double onePercentLow =
-        [self percentile:0.01];
-
-    double zeroPointOnePercentLow =
-        [self percentile:0.001];
-
-    double minFPS =
-        _sampleCount > 0 ?
-        _minFPS :
-        0.0;
-
-    double maxFPS =
-        _maxFPS;
-
-    double hz =
-        [self refreshRate];
-
-    double ram =
-        [self memoryMB];
-
-    /*
-     * SINGLE-LINE MAIN HUD.
-     * This is the main Steam Deck/MangoHud-inspired design.
-     */
-    _label.text =
-        [NSString stringWithFormat:
-            @"FPS %.1f  |  AVG %.1f  |  1%% %.1f  |  0.1%% %.1f  |  FT %.2fms  |  MIN %.1f  |  MAX %.1f  |  HZ %.0f  |  RAM %.0fMB",
-            fps,
-            avg,
-            onePercentLow,
-            zeroPointOnePercentLow,
-            frameTime,
-            minFPS,
-            maxFPS,
-            hz,
-            ram];
-
-    _deviceLabel.text =
-        [NSString stringWithFormat:
-            @"%@  |  %@  |  %@",
-            [self deviceModel],
-            [self gpuName],
-            [self batteryText]];
 }
 
 @end
@@ -727,33 +548,19 @@ static FPSOverlayController *gFPSOverlayController = nil;
 __attribute__((constructor))
 static void FPSOverlayInit(void)
 {
-    /*
-     * Do not touch UIKit from the constructor thread.
-     */
-    dispatch_async(
-        dispatch_get_main_queue(),
-        ^{
+    dispatch_async(dispatch_get_main_queue(), ^{
+        gFPSOverlayController = [[FPSOverlayController alloc] init];
 
-            gFPSOverlayController =
-                [[FPSOverlayController alloc] init];
-
-            if ([[UIApplication sharedApplication]
-                    applicationState] ==
-                UIApplicationStateActive) {
-
-                [gFPSOverlayController start];
-            }
-
-            [[NSNotificationCenter defaultCenter]
-                addObserverForName:
-                    UIApplicationDidBecomeActiveNotification
-                object:nil
-                queue:[NSOperationQueue mainQueue]
-                usingBlock:
-                    ^(NSNotification *notification) {
-
-                        [gFPSOverlayController start];
-                    }];
+        if ([[UIApplication sharedApplication] applicationState] == UIApplicationStateActive) {
+            [gFPSOverlayController start];
         }
-    );
+
+        [[NSNotificationCenter defaultCenter]
+            addObserverForName:UIApplicationDidBecomeActiveNotification
+                        object:nil
+                         queue:[NSOperationQueue mainQueue]
+                    usingBlock:^(NSNotification *notification) {
+            [gFPSOverlayController start];
+        }];
+    });
 }
