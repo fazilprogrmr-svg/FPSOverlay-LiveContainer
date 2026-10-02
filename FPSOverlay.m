@@ -4,7 +4,6 @@
 #import <sys/sysctl.h>
 #import <float.h>
 #import <string.h>
-#import <dlfcn.h>
 
 #define FPS_HISTORY_SIZE 120
 #define CPU_SAMPLE_INTERVAL 0.5
@@ -35,10 +34,6 @@
 
     double _batteryPercent;
     BOOL _hasBatteryPercent;
-    void *_ioKitHandle;
-    void *_iopsCopyPowerSourcesInfo;
-    void *_iopsCopyPowerSourcesList;
-    void *_iopsGetPowerSourceDescription;
 
     BOOL _started;
 }
@@ -62,10 +57,6 @@
         _hasCPUBase = NO;
         _batteryPercent = -1.0;
         _hasBatteryPercent = NO;
-        _ioKitHandle = NULL;
-        _iopsCopyPowerSourcesInfo = NULL;
-        _iopsCopyPowerSourcesList = NULL;
-        _iopsGetPowerSourceDescription = NULL;
         _started = NO;
 
         [UIDevice currentDevice].batteryMonitoringEnabled = YES;
@@ -81,7 +72,6 @@
     [_displayLink invalidate];
     [_label removeFromSuperview];
     [[NSNotificationCenter defaultCenter] removeObserver:self];
-    if (_ioKitHandle) dlclose(_ioKitHandle);
     [super dealloc];
 }
 
@@ -257,103 +247,18 @@
 
 #pragma mark - Battery / display
 
-- (BOOL)loadIOKitBatteryFunctions
-{
-    if (_ioKitHandle && _iopsCopyPowerSourcesInfo &&
-        _iopsCopyPowerSourcesList && _iopsGetPowerSourceDescription) {
-        return YES;
-    }
-
-    if (_ioKitHandle) {
-        dlclose(_ioKitHandle);
-        _ioKitHandle = NULL;
-    }
-
-    _iopsCopyPowerSourcesInfo = NULL;
-    _iopsCopyPowerSourcesList = NULL;
-    _iopsGetPowerSourceDescription = NULL;
-
-    _ioKitHandle = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_LAZY);
-    if (!_ioKitHandle) return NO;
-
-    _iopsCopyPowerSourcesInfo = dlsym(_ioKitHandle, "IOPSCopyPowerSourcesInfo");
-    _iopsCopyPowerSourcesList = dlsym(_ioKitHandle, "IOPSCopyPowerSourcesList");
-    _iopsGetPowerSourceDescription = dlsym(_ioKitHandle, "IOPSGetPowerSourceDescription");
-
-    if (!_iopsCopyPowerSourcesInfo || !_iopsCopyPowerSourcesList ||
-        !_iopsGetPowerSourceDescription) {
-        return NO;
-    }
-
-    return YES;
-}
-
-- (double)iokitBatteryPercent
-{
-    if (![self loadIOKitBatteryFunctions]) return -1.0;
-
-    typedef CFTypeRef (*CopyInfoFunc)(void);
-    typedef CFArrayRef (*CopyListFunc)(CFTypeRef);
-    typedef CFDictionaryRef (*DescriptionFunc)(CFTypeRef, CFTypeRef);
-
-    CopyInfoFunc copyInfo = (CopyInfoFunc)_iopsCopyPowerSourcesInfo;
-    CopyListFunc copyList = (CopyListFunc)_iopsCopyPowerSourcesList;
-    DescriptionFunc description = (DescriptionFunc)_iopsGetPowerSourceDescription;
-
-    CFTypeRef blob = copyInfo();
-    if (!blob) return -1.0;
-
-    CFArrayRef list = copyList(blob);
-    double result = -1.0;
-
-    if (list) {
-        CFIndex count = CFArrayGetCount(list);
-
-        for (CFIndex i = 0; i < count; i++) {
-            CFTypeRef source = CFArrayGetValueAtIndex(list, i);
-            CFDictionaryRef dict = description(blob, source);
-            if (!dict) continue;
-
-            CFTypeRef currentRef = CFDictionaryGetValue(dict, CFSTR("Current Capacity"));
-            CFTypeRef maxRef = CFDictionaryGetValue(dict, CFSTR("Max Capacity"));
-
-            if (currentRef && maxRef &&
-                CFGetTypeID(currentRef) == CFNumberGetTypeID() &&
-                CFGetTypeID(maxRef) == CFNumberGetTypeID()) {
-
-                int current = 0;
-                int maximum = 0;
-                CFNumberGetValue((CFNumberRef)currentRef, kCFNumberIntType, &current);
-                CFNumberGetValue((CFNumberRef)maxRef, kCFNumberIntType, &maximum);
-
-                if (maximum > 0 && current >= 0) {
-                    result = ((double)current / (double)maximum) * 100.0;
-                    break;
-                }
-            }
-        }
-
-        CFRelease(list);
-    }
-
-    CFRelease(blob);
-    return result;
-}
-
 - (void)updateBatteryReading
 {
     UIDevice *device = [UIDevice currentDevice];
     device.batteryMonitoringEnabled = YES;
 
-    double level = [self iokitBatteryPercent];
+    // Use Apple's UIDevice batteryLevel directly.
+    // Do not use IOKit Current Capacity because it can differ from the
+    // user-facing battery percentage on iOS.
+    float level = device.batteryLevel;
 
-    if (level < 0.0 || level > 100.0) {
-        float uidLevel = device.batteryLevel;
-        if (uidLevel >= 0.0f) level = (double)uidLevel * 100.0;
-    }
-
-    if (level >= 0.0 && level <= 100.0) {
-        _batteryPercent = level;
+    if (level >= 0.0f && level <= 1.0f) {
+        _batteryPercent = (double)level * 100.0;
         _hasBatteryPercent = YES;
     }
 
