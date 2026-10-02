@@ -260,6 +260,20 @@
     return 60.0;
 }
 
+- (NSString *)thermalText
+{
+    if (@available(iOS 11.0, *)) {
+        NSProcessInfoThermalState state = [NSProcessInfo processInfo].thermalState;
+        switch (state) {
+            case NSProcessInfoThermalStateNominal: return @"NOM";
+            case NSProcessInfoThermalStateFair: return @"FAIR";
+            case NSProcessInfoThermalStateSerious: return @"SER";
+            case NSProcessInfoThermalStateCritical: return @"CRIT";
+        }
+    }
+    return @"--";
+}
+
 #pragma mark - FPS graph
 
 - (NSString *)tinyGraph
@@ -309,12 +323,12 @@
     label.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.52];
     label.layer.cornerRadius = 4.0;
     label.layer.masksToBounds = YES;
-    label.font = [UIFont monospacedDigitSystemFontOfSize:9.0 weight:UIFontWeightSemibold];
+    label.font = [UIFont monospacedDigitSystemFontOfSize:8.5 weight:UIFontWeightSemibold];
     label.numberOfLines = 1;
     label.textAlignment = NSTextAlignmentLeft;
     label.userInteractionEnabled = NO;
     label.adjustsFontSizeToFitWidth = YES;
-    label.minimumScaleFactor = 0.45;
+    label.minimumScaleFactor = 0.40;
     label.lineBreakMode = NSLineBreakByClipping;
     label.translatesAutoresizingMaskIntoConstraints = NO;
     label.layer.shadowColor = UIColor.blackColor.CGColor;
@@ -335,9 +349,10 @@
     [window addSubview:_label];
 
     [NSLayoutConstraint activateConstraints:@[
-        [_label.leadingAnchor constraintEqualToAnchor:window.leadingAnchor constant:10.0],
+        [_label.centerXAnchor constraintEqualToAnchor:window.centerXAnchor],
+        [_label.leadingAnchor constraintGreaterThanOrEqualToAnchor:window.leadingAnchor constant:8.0],
+        [_label.trailingAnchor constraintLessThanOrEqualToAnchor:window.trailingAnchor constant:-8.0],
         [_label.topAnchor constraintEqualToAnchor:window.safeAreaLayoutGuide.topAnchor constant:3.0],
-        [_label.trailingAnchor constraintLessThanOrEqualToAnchor:window.trailingAnchor constant:-10.0],
         [_label.heightAnchor constraintEqualToConstant:19.0]
     ]];
 
@@ -393,7 +408,9 @@
     double totalRAM = [self totalRAMGB];
     NSString *battery = [self batteryText];
     double hz = [self refreshRate];
+    NSString *thermal = [self thermalText];
     NSString *graph = [self tinyGraph];
+    double frameTime = fps > 0.0 ? (1000.0 / fps) : 0.0;
 
     NSString *ramText;
     if (ram >= 1024.0) {
@@ -403,19 +420,18 @@
     }
 
     NSString *cpuText = cores > 0
-        ? [NSString stringWithFormat:@"CPU %@ %.0f%%", cpu, _cpuPercent]
+        ? [NSString stringWithFormat:@"CPU %@ %.0f%%/%ldC", cpu, _cpuPercent, (long)cores]
         : [NSString stringWithFormat:@"CPU %@ %.0f%%", cpu, _cpuPercent];
 
     /*
-     * GPU utilization and device-wide wattage are intentionally not guessed.
-     * We display -- until a genuine runtime measurement is available.
+     * GPU utilization and device-wide wattage are intentionally omitted.
+     * No placeholder/fake values are shown.
      */
-    NSString *gpuText = [NSString stringWithFormat:@"GPU %@ --%%", gpu];
-    NSString *powerText = @"PWR --";
+    NSString *gpuText = [NSString stringWithFormat:@"GPU %@", gpu];
 
     NSString *plain = [NSString stringWithFormat:
-        @"FPS %.0f | %@ | %@ | RAM %@ | BATT %@ | %@ | HZ %.0f | %@",
-        fps, cpuText, gpuText, ramText, battery, powerText, hz, graph];
+        @"FPS %.0f | %@ | %@ | RAM %@ | BATT %@ | FT %.1fms | HZ %.0f | THM %@ | %@",
+        fps, cpuText, gpuText, ramText, battery, frameTime, hz, thermal, graph];
 
     NSMutableAttributedString *styled =
         [[[NSMutableAttributedString alloc] initWithString:plain] autorelease];
@@ -435,8 +451,11 @@
     r = [plain rangeOfString:@"GPU"]; if (r.location != NSNotFound) [styled addAttribute:NSForegroundColorAttributeName value:green range:r];
     r = [plain rangeOfString:@"RAM"]; if (r.location != NSNotFound) [styled addAttribute:NSForegroundColorAttributeName value:purple range:r];
     r = [plain rangeOfString:@"BATT"]; if (r.location != NSNotFound) [styled addAttribute:NSForegroundColorAttributeName value:pink range:r];
-    r = [plain rangeOfString:@"PWR"]; if (r.location != NSNotFound) [styled addAttribute:NSForegroundColorAttributeName value:orange range:r];
+    r = [plain rangeOfString:@"FT"]; if (r.location != NSNotFound) [styled addAttribute:NSForegroundColorAttributeName value:orange range:r];
     r = [plain rangeOfString:@"HZ"]; if (r.location != NSNotFound) [styled addAttribute:NSForegroundColorAttributeName value:purple range:r];
+    r = [plain rangeOfString:@"THM"]; if (r.location != NSNotFound) [styled addAttribute:NSForegroundColorAttributeName value:orange range:r];
+    r = [plain rangeOfString:graph options:NSBackwardsSearch range:NSMakeRange(0, [plain length])];
+    if (r.location != NSNotFound) [styled addAttribute:NSForegroundColorAttributeName value:green range:r];
 
     _label.attributedText = styled;
 }
