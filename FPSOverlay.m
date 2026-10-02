@@ -257,73 +257,13 @@
 
 #pragma mark - Battery / display
 
-- (double)statusBarBatteryPercent
-{
-    UIApplication *app = [UIApplication sharedApplication];
-
-    if (![app respondsToSelector:NSSelectorFromString(@"statusBar")]) return -1.0;
-
-    id statusBar = [app valueForKey:@"statusBar"];
-    if (!statusBar) return -1.0;
-
-    NSMutableArray *pending = [NSMutableArray arrayWithObject:statusBar];
-    NSString *batteryClassName = @"UIStatusBarBatteryItemView";
-    NSString *batteryPercentClassName = @"UIStatusBarBatteryPercentItemView";
-
-    while (pending.count > 0) {
-        id object = [pending lastObject];
-        [pending removeLastObject];
-
-        if ([object isKindOfClass:NSClassFromString(batteryPercentClassName)] ||
-            [object isKindOfClass:NSClassFromString(batteryClassName)]) {
-            @try {
-                id capacity = [object valueForKey:@"capacity"];
-                if ([capacity respondsToSelector:@selector(doubleValue)]) {
-                    double value = [capacity doubleValue];
-                    if (value >= 0.0 && value <= 100.0) return value;
-                }
-
-                id percentString = [object valueForKey:@"percentString"];
-                if ([percentString isKindOfClass:[NSString class]]) {
-                    NSString *digits = [percentString stringByReplacingOccurrencesOfString:@"%" withString:@""];
-                    double value = [digits doubleValue];
-                    if (value >= 0.0 && value <= 100.0) return value;
-                }
-            } @catch (id exception) {
-            }
-        }
-
-        if ([object isKindOfClass:[UIView class]]) {
-            NSArray *subviews = [(UIView *)object subviews];
-            for (UIView *view in subviews) {
-                [pending addObject:view];
-            }
-        }
-    }
-
-    return -1.0;
-}
-
 - (double)batteryPercent
 {
-    /*
-     * First try the value used by UIKit's status-bar battery item.
-     * This is the best match for the percentage the user actually sees.
-     */
-    double statusValue = [self statusBarBatteryPercent];
-    if (statusValue >= 0.0 && statusValue <= 100.0) {
-        return statusValue;
-    }
-
-    /*
-     * Fallback to Apple's public UIDevice batteryLevel API.
-     * Re-enable monitoring before reading so a reused LiveContainer
-     * process does not keep our previous monitoring state.
-     */
+    // Use Apple's public UIDevice battery API only.
+    // Do not inspect UIApplication status-bar internals: iOS 27
+    // can terminate apps that call the removed statusBar/statusBarWindow API.
     UIDevice *device = [UIDevice currentDevice];
-    if (!device.batteryMonitoringEnabled) {
-        device.batteryMonitoringEnabled = YES;
-    }
+    device.batteryMonitoringEnabled = YES;
 
     float level = device.batteryLevel;
     if (level >= 0.0f && level <= 1.0f) {
