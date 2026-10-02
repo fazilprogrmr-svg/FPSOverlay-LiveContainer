@@ -9,123 +9,39 @@ permissions:
 jobs:
   build:
     runs-on: macos-15-intel
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Install Theos
         uses: Randomblock1/theos-action@v1
-
-      - name: Build FPSOverlay
+      - name: Build
         run: |
           set -e
-
-          echo "=== Cleaning ==="
           make clean || true
-
-          echo "=== Building FPSOverlay ==="
           make FINALPACKAGE=1
-
-      - name: Verify FPSOverlay.dylib
+      - name: Verify
         run: |
           set -e
-
-          DYLIB=".theos/obj/arm64/FPSOverlay.dylib"
-
-          echo "=== Checking dylib ==="
-
-          if [ ! -f "$DYLIB" ]; then
-            echo "ERROR: FPSOverlay.dylib was not found!"
-            echo ""
-            echo "Available dylib files:"
-            find .theos -type f -name "*.dylib" -print
-            exit 1
-          fi
-
-          echo ""
-          echo "=== File Information ==="
-          file "$DYLIB"
-
-          echo ""
-          echo "=== Architecture ==="
-          lipo -info "$DYLIB"
-
-          echo ""
-          echo "=== Dependencies ==="
-          otool -L "$DYLIB"
-
-          echo ""
-          echo "=== File Size ==="
-          ls -lh "$DYLIB"
-
-          echo ""
-          echo "=== Build successful ==="
-
-      - name: Prepare Release
+          D=".theos/obj/arm64/FPSOverlay.dylib"
+          test -f "$D"
+          file "$D"
+          lipo -info "$D"
+          otool -L "$D"
+          ls -lh "$D"
+      - name: Prepare release
         run: |
-          set -e
-
           mkdir -p release
-
-          cp ".theos/obj/arm64/FPSOverlay.dylib" \
-             "release/FPSOverlay.dylib"
-
-          echo "=== Release file ==="
-          ls -lh release/FPSOverlay.dylib
-
+          cp ".theos/obj/arm64/FPSOverlay.dylib" release/FPSOverlay.dylib
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: "v5.1.${{ github.run_number }}"
-          name: "FPSOverlay v5.1.${{ github.run_number }}"
+          tag_name: "v6.0.${{ github.run_number }}"
+          name: "FPSOverlay v6.0.${{ github.run_number }}"
           body: |
-            # FPSOverlay v5.1
-
-            Lightweight FPS and frame-time overlay for LiveContainer.
-
-            ## Features
-
-            - FPS counter
-            - Frame time in milliseconds
-            - Text-only overlay
-            - No black background
-            - White text
-            - Subtle black text shadow
-            - ARM64
-            - LiveContainer TweakLoader compatible
-
-            ## Installation
-
-            1. Download `FPSOverlay.dylib`.
-            2. Add it to your LiveContainer Tweak folder.
-            3. Enable the tweak.
-            4. Launch your game through LiveContainer.
-
-            ## Display
-
-            Example:
-
-            FPS 32.7
-            30.57 ms
-
-            ## Notes
-
-            FPSOverlay is a display-only tweak.
-
-            It does not intentionally:
-            - Download game files
-            - Delete game files
-            - Modify game assets
-            - Modify save data
-            - Change network settings
-            - Unlock FPS
-            - Change graphics settings
-
-            Built for LiveContainer using Theos.
-
-          files: |
-            release/FPSOverlay.dylib
-
+            # FPSOverlay v6
+            Game Performance Monitor for LiveContainer.
+            Features: FPS, frame time, average/min/max, 1% low, 0.1% low, RAM, battery, and automatic window reattachment.
+            Download `FPSOverlay.dylib` and add it to the LiveContainer Tweak folder.
+          files: release/FPSOverlay.dylib
           draft: false
           prerelease: false
