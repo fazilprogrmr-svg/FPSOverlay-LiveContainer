@@ -4,9 +4,12 @@
 #import <sys/sysctl.h>
 #import <float.h>
 #import <string.h>
+#import <dlfcn.h>
 
 #define FPS_HISTORY_SIZE 120
 #define CPU_SAMPLE_INTERVAL 0.5
+#define OVERLAY_REFRESH_INTERVAL 0.5
+#define BATTERY_SAMPLE_INTERVAL 2.0
 
 @interface FPSOverlayController : NSObject
 {
@@ -30,6 +33,13 @@
     uint64_t _previousWallTime;
     BOOL _hasCPUBase;
 
+    double _batteryPercent;
+    BOOL _hasBatteryPercent;
+    void *_ioKitHandle;
+    void *_iopsCopyPowerSourcesInfo;
+    void *_iopsCopyPowerSourcesList;
+    void *_iopsGetPowerSourceDescription;
+
     BOOL _started;
 }
 - (void)start;
@@ -50,6 +60,12 @@
         _previousSystemTime = 0;
         _previousWallTime = 0;
         _hasCPUBase = NO;
+        _batteryPercent = -1.0;
+        _hasBatteryPercent = NO;
+        _ioKitHandle = NULL;
+        _iopsCopyPowerSourcesInfo = NULL;
+        _iopsCopyPowerSourcesList = NULL;
+        _iopsGetPowerSourceDescription = NULL;
         _started = NO;
 
         [UIDevice currentDevice].batteryMonitoringEnabled = YES;
@@ -65,6 +81,7 @@
     [_displayLink invalidate];
     [_label removeFromSuperview];
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+    if (_ioKitHandle) dlclose(_ioKitHandle);
     [super dealloc];
 }
 
@@ -147,16 +164,16 @@
 {
     NSString *model = [self deviceModel];
 
-    if ([model hasPrefix:@"iPhone 11"]) return @"A13 GPU";
-    if ([model hasPrefix:@"iPhone 12"]) return @"A14 GPU";
-    if ([model hasPrefix:@"iPhone 13"]) return @"A15 GPU";
-    if ([model isEqualToString:@"iPhone 14"] || [model isEqualToString:@"iPhone 14 Plus"]) return @"A15 GPU";
-    if ([model hasPrefix:@"iPhone 14 Pro"]) return @"A16 GPU";
-    if ([model hasPrefix:@"iPhone 15 Pro"]) return @"A17 GPU";
-    if ([model hasPrefix:@"iPhone 15"]) return @"A16 GPU";
-    if ([model hasPrefix:@"iPhone 16"]) return @"A18 GPU";
-    if ([model hasPrefix:@"iPhone 17"]) return @"A19 GPU";
-    return @"Apple GPU";
+    if ([model hasPrefix:@"iPhone 11"]) return @"A13";
+    if ([model hasPrefix:@"iPhone 12"]) return @"A14";
+    if ([model hasPrefix:@"iPhone 13"]) return @"A15";
+    if ([model isEqualToString:@"iPhone 14"] || [model isEqualToString:@"iPhone 14 Plus"]) return @"A15";
+    if ([model hasPrefix:@"iPhone 14 Pro"]) return @"A16";
+    if ([model hasPrefix:@"iPhone 15 Pro"]) return @"A17";
+    if ([model hasPrefix:@"iPhone 15"]) return @"A16";
+    if ([model hasPrefix:@"iPhone 16"]) return @"A18";
+    if ([model hasPrefix:@"iPhone 17"]) return @"A19";
+    return @"Apple";
 }
 
 - (NSInteger)cpuCoreCount
@@ -240,14 +257,114 @@
 
 #pragma mark - Battery / display
 
-- (NSString *)batteryText
+- (BOOL)loadIOKitBatteryFunctions
+{
+    if (_ioKitHandle && _iopsCopyPowerSourcesInfo &&
+        _iopsCopyPowerSourcesList && _iopsGetPowerSourceDescription) {
+        return YES;
+    }
+
+    if (_ioKitHandle) {
+        dlclose(_ioKitHandle);
+        _ioKitHandle = NULL;
+    }
+
+    _iopsCopyPowerSourcesInfo = NULL;
+    _iopsCopyPowerSourcesList = NULL;
+    _iopsGetPowerSourceDescription = NULL;
+
+    _ioKitHandle = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_LAZY);
+    if (!_ioKitHandle) return NO;
+
+    _iopsCopyPowerSourcesInfo = dlsym(_ioKitHandle, "IOPSCopyPowerSourcesInfo");
+    _iopsCopyPowerSourcesList = dlsym(_ioKitHandle, "IOPSCopyPowerSourcesList");
+    _iopsGetPowerSourceDescription = dlsym(_ioKitHandle, "IOPSGetPowerSourceDescription");
+
+    if (!_iopsCopyPowerSourcesInfo || !_iopsCopyPowerSourcesList ||
+        !_iopsGetPowerSourceDescription) {
+        return NO;
+    }
+
+    return YES;
+}
+
+- (double)iokitBatteryPercent
+{
+    if (![self loadIOKitBatteryFunctions]) return -1.0;
+
+    typedef CFTypeRef (*CopyInfoFunc)(void);
+    typedef CFArrayRef (*CopyListFunc)(CFTypeRef);
+    typedef CFDictionaryRef (*DescriptionFunc)(CFTypeRef, CFTypeRef);
+
+    CopyInfoFunc copyInfo = (CopyInfoFunc)_iopsCopyPowerSourcesInfo;
+    CopyListFunc copyList = (CopyListFunc)_iopsCopyPowerSourcesList;
+    DescriptionFunc description = (DescriptionFunc)_iopsGetPowerSourceDescription;
+
+    CFTypeRef blob = copyInfo();
+    if (!blob) return -1.0;
+
+    CFArrayRef list = copyList(blob);
+    double result = -1.0;
+
+    if (list) {
+        CFIndex count = CFArrayGetCount(list);
+
+        for (CFIndex i = 0; i < count; i++) {
+            CFTypeRef source = CFArrayGetValueAtIndex(list, i);
+            CFDictionaryRef dict = description(blob, source);
+            if (!dict) continue;
+
+            CFTypeRef currentRef = CFDictionaryGetValue(dict, CFSTR("Current Capacity"));
+            CFTypeRef maxRef = CFDictionaryGetValue(dict, CFSTR("Max Capacity"));
+
+            if (currentRef && maxRef &&
+                CFGetTypeID(currentRef) == CFNumberGetTypeID() &&
+                CFGetTypeID(maxRef) == CFNumberGetTypeID()) {
+
+                int current = 0;
+                int maximum = 0;
+                CFNumberGetValue((CFNumberRef)currentRef, kCFNumberIntType, &current);
+                CFNumberGetValue((CFNumberRef)maxRef, kCFNumberIntType, &maximum);
+
+                if (maximum > 0 && current >= 0) {
+                    result = ((double)current / (double)maximum) * 100.0;
+                    break;
+                }
+            }
+        }
+
+        CFRelease(list);
+    }
+
+    CFRelease(blob);
+    return result;
+}
+
+- (void)updateBatteryReading
 {
     UIDevice *device = [UIDevice currentDevice];
     device.batteryMonitoringEnabled = YES;
-    float level = device.batteryLevel;
 
-    if (level < 0.0f) return @"--";
-    return [NSString stringWithFormat:@"%.0f%%", level * 100.0f];
+    double level = [self iokitBatteryPercent];
+
+    if (level < 0.0 || level > 100.0) {
+        float uidLevel = device.batteryLevel;
+        if (uidLevel >= 0.0f) level = (double)uidLevel * 100.0;
+    }
+
+    if (level >= 0.0 && level <= 100.0) {
+        _batteryPercent = level;
+        _hasBatteryPercent = YES;
+    }
+
+    [self updateLabel];
+}
+
+- (NSString *)batteryText
+{
+    if (!_hasBatteryPercent) return @"--";
+
+    return [NSString stringWithFormat:@"%.0f%%", _batteryPercent];
 }
 
 - (double)refreshRate
@@ -265,10 +382,10 @@
     if (@available(iOS 11.0, *)) {
         NSProcessInfoThermalState state = [NSProcessInfo processInfo].thermalState;
         switch (state) {
-            case NSProcessInfoThermalStateNominal: return @"NOM";
-            case NSProcessInfoThermalStateFair: return @"FAIR";
-            case NSProcessInfoThermalStateSerious: return @"SER";
-            case NSProcessInfoThermalStateCritical: return @"CRIT";
+            case NSProcessInfoThermalStateNominal: return @"Normal";
+            case NSProcessInfoThermalStateFair: return @"Fair";
+            case NSProcessInfoThermalStateSerious: return @"Serious";
+            case NSProcessInfoThermalStateCritical: return @"Critical";
         }
     }
     return @"--";
@@ -323,12 +440,12 @@
     label.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.52];
     label.layer.cornerRadius = 4.0;
     label.layer.masksToBounds = YES;
-    label.font = [UIFont monospacedDigitSystemFontOfSize:8.5 weight:UIFontWeightSemibold];
+    label.font = [UIFont monospacedDigitSystemFontOfSize:10.5 weight:UIFontWeightSemibold];
     label.numberOfLines = 1;
     label.textAlignment = NSTextAlignmentLeft;
     label.userInteractionEnabled = NO;
     label.adjustsFontSizeToFitWidth = YES;
-    label.minimumScaleFactor = 0.40;
+    label.minimumScaleFactor = 0.50;
     label.lineBreakMode = NSLineBreakByClipping;
     label.translatesAutoresizingMaskIntoConstraints = NO;
     label.layer.shadowColor = UIColor.blackColor.CGColor;
@@ -336,6 +453,15 @@
     label.layer.shadowOpacity = 0.9;
     label.layer.shadowRadius = 1.0;
     return label;
+}
+
+- (CGFloat)fontSizeForWindow:(UIWindow *)window
+{
+    CGFloat width = window.bounds.size.width;
+    if (width >= 1000.0) return 11.5;
+    if (width >= 700.0) return 10.5;
+    if (width >= 500.0) return 9.5;
+    return 8.0;
 }
 
 - (void)createOverlayOnWindow:(UIWindow *)window
@@ -346,14 +472,15 @@
 
     _hostWindow = window;
     _label = [self makeLabel];
+    _label.font = [UIFont monospacedDigitSystemFontOfSize:[self fontSizeForWindow:window] weight:UIFontWeightSemibold];
     [window addSubview:_label];
 
     [NSLayoutConstraint activateConstraints:@[
         [_label.centerXAnchor constraintEqualToAnchor:window.centerXAnchor],
-        [_label.leadingAnchor constraintGreaterThanOrEqualToAnchor:window.leadingAnchor constant:8.0],
-        [_label.trailingAnchor constraintLessThanOrEqualToAnchor:window.trailingAnchor constant:-8.0],
+        [_label.leadingAnchor constraintGreaterThanOrEqualToAnchor:window.leadingAnchor constant:6.0],
+        [_label.trailingAnchor constraintLessThanOrEqualToAnchor:window.trailingAnchor constant:-6.0],
         [_label.topAnchor constraintEqualToAnchor:window.safeAreaLayoutGuide.topAnchor constant:3.0],
-        [_label.heightAnchor constraintEqualToConstant:19.0]
+        [_label.heightAnchor constraintEqualToConstant:23.0]
     ]];
 
     [self updateLabel];
@@ -398,6 +525,10 @@
 {
     if (!_label) return;
 
+    if (_hostWindow) {
+        _label.font = [UIFont monospacedDigitSystemFontOfSize:[self fontSizeForWindow:_hostWindow] weight:UIFontWeightSemibold];
+    }
+
     double fps = 0.0;
     if (_historyCount > 0) fps = _fpsHistory[_historyCount - 1];
 
@@ -430,7 +561,7 @@
     NSString *gpuText = [NSString stringWithFormat:@"GPU %@", gpu];
 
     NSString *plain = [NSString stringWithFormat:
-        @"FPS %.0f | %@ | %@ | RAM %@ | BATT %@ | FT %.1fms | HZ %.0f | THM %@ | %@",
+        @"FPS %.0f | %@ | %@ | RAM %@ | BATT %@ | FT %.1fms | HZ %.0f | Thermal State: %@ | %@",
         fps, cpuText, gpuText, ramText, battery, frameTime, hz, thermal, graph];
 
     NSMutableAttributedString *styled =
@@ -453,7 +584,7 @@
     r = [plain rangeOfString:@"BATT"]; if (r.location != NSNotFound) [styled addAttribute:NSForegroundColorAttributeName value:pink range:r];
     r = [plain rangeOfString:@"FT"]; if (r.location != NSNotFound) [styled addAttribute:NSForegroundColorAttributeName value:orange range:r];
     r = [plain rangeOfString:@"HZ"]; if (r.location != NSNotFound) [styled addAttribute:NSForegroundColorAttributeName value:purple range:r];
-    r = [plain rangeOfString:@"THM"]; if (r.location != NSNotFound) [styled addAttribute:NSForegroundColorAttributeName value:orange range:r];
+    r = [plain rangeOfString:@"Thermal State:"]; if (r.location != NSNotFound) [styled addAttribute:NSForegroundColorAttributeName value:orange range:r];
     r = [plain rangeOfString:graph options:NSBackwardsSearch range:NSMakeRange(0, [plain length])];
     if (r.location != NSNotFound) [styled addAttribute:NSForegroundColorAttributeName value:green range:r];
 
@@ -462,9 +593,14 @@
 
 #pragma mark - Window / start
 
+- (void)batteryNotification:(NSNotification *)notification
+{
+    [self updateBatteryReading];
+}
+
 - (void)batteryTimerTick:(NSTimer *)timer
 {
-    [self updateLabel];
+    [self updateBatteryReading];
 }
 
 - (void)refreshWindowTimer:(NSTimer *)timer
@@ -479,6 +615,11 @@
 
     if (_hostWindow != window || _label.superview != window) {
         [self createOverlayOnWindow:window];
+    } else {
+        _label.hidden = NO;
+        _label.alpha = 1.0;
+        [window bringSubviewToFront:_label];
+        _label.font = [UIFont monospacedDigitSystemFontOfSize:[self fontSizeForWindow:window] weight:UIFontWeightSemibold];
     }
 
     if (!_displayLink) {
@@ -490,14 +631,16 @@
 - (void)start
 {
     if (_started) {
+        [self updateBatteryReading];
         [self refreshWindow];
         return;
     }
 
     _started = YES;
     [UIDevice currentDevice].batteryMonitoringEnabled = YES;
+    [self updateBatteryReading];
 
-    _batteryTimer = [NSTimer scheduledTimerWithTimeInterval:3.0
+    _batteryTimer = [NSTimer scheduledTimerWithTimeInterval:BATTERY_SAMPLE_INTERVAL
                                                       target:self
                                                     selector:@selector(batteryTimerTick:)
                                                     userInfo:nil
@@ -510,8 +653,13 @@
                                                  repeats:YES];
 
     [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(updateLabel)
+                                             selector:@selector(batteryNotification:)
                                                  name:UIDeviceBatteryLevelDidChangeNotification
+                                               object:nil];
+
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(batteryNotification:)
+                                                 name:UIDeviceBatteryStateDidChangeNotification
                                                object:nil];
 
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC),
@@ -519,7 +667,7 @@
         [self refreshWindow];
 
         if (!self->_refreshTimer) {
-            self->_refreshTimer = [NSTimer scheduledTimerWithTimeInterval:2.0
+            self->_refreshTimer = [NSTimer scheduledTimerWithTimeInterval:OVERLAY_REFRESH_INTERVAL
                                                                      target:self
                                                                    selector:@selector(refreshWindowTimer:)
                                                                    userInfo:nil
