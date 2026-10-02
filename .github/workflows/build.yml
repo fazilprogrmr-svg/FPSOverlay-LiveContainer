@@ -9,16 +9,20 @@ permissions:
 jobs:
   build:
     runs-on: macos-15-intel
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Install Theos
         uses: Randomblock1/theos-action@v1
+
       - name: Build
         run: |
           set -e
           make clean || true
           make FINALPACKAGE=1
+
       - name: Verify
         run: |
           set -e
@@ -28,20 +32,38 @@ jobs:
           lipo -info "$D"
           otool -L "$D"
           ls -lh "$D"
+
       - name: Prepare release
         run: |
           mkdir -p release
           cp ".theos/obj/arm64/FPSOverlay.dylib" release/FPSOverlay.dylib
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: "v6.0.${{ github.run_number }}"
-          name: "FPSOverlay v6.0.${{ github.run_number }}"
+          tag_name: "v7.0.${{ github.run_number }}"
+          name: "FPSOverlay v7.0.${{ github.run_number }}"
           body: |
-            # FPSOverlay v6
-            Game Performance Monitor for LiveContainer.
-            Features: FPS, frame time, average/min/max, 1% low, 0.1% low, RAM, battery, and automatic window reattachment.
-            Download `FPSOverlay.dylib` and add it to the LiveContainer Tweak folder.
+            # FPSOverlay v7
+
+            Compact performance HUD inspired by the information density of emulator overlays.
+
+            Includes:
+            - FPS
+            - Average FPS
+            - 1% low
+            - 0.1% low
+            - Frame time
+            - Rolling minimum / maximum FPS
+            - Display refresh rate
+            - Process RAM
+            - Battery
+            - Device identifier/name
+            - Apple GPU family
+            - Live FPS graph
+            - Automatic window reattachment
+
+            Emulator-only counters and restricted iOS metrics are intentionally omitted.
           files: release/FPSOverlay.dylib
           draft: false
           prerelease: false
