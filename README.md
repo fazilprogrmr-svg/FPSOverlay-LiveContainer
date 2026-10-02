@@ -4,8 +4,6 @@ A lightweight iOS game performance overlay for games running through **LiveConta
 
 FPSOverlay provides real-time FPS and performance information directly on top of the game using a compact HUD inspired by the information-dense style of emulator performance overlays.
 
-> **Current public version: V1.0**
-
 ## Features
 
 ### FPS Performance
