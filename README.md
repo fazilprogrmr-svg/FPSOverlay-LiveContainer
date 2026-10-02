@@ -1,43 +1,32 @@
-# FPSOverlay for LiveContainer
+# FPSOverlay V7
 
-A lightweight Game Performance Monitor for iOS games running through LiveContainer.
+Compact iOS game performance HUD for LiveContainer.
 
-## Features
-- Live FPS and frame time
-- Average, minimum and maximum FPS
-- 1% low and 0.1% low FPS
-- Guest-process RAM usage
-- Battery percentage
-- Automatic reattachment when a game changes windows
-- Text-only HUD
-- ARM64
+## Included metrics
 
-## Example
-```text
-FPS  59.8   16.72 ms
-AVG  59.5  MIN  55.1
-MAX  60.0  1% LOW  52.4
-0.1% LOW 49.8
-RAM  842 MB  BAT  78%
-```
+- FPS
+- AVG FPS
+- 1% LOW
+- 0.1% LOW
+- Frame time
+- Rolling MIN/MAX
+- Display Hz
+- Process RAM
+- Battery
+- Device
+- GPU family
+- Live FPS graph
 
-## Download
-Download the latest `FPSOverlay.dylib` directly from GitHub Releases.
-
-## Installation
-1. Download `FPSOverlay.dylib`.
-2. Add it to the LiveContainer Tweak folder.
-3. Enable it.
-4. Assign the folder to the game.
-5. Launch the game.
-
-## Notes
-FPS is estimated from `CADisplayLink`. RAM is the guest process resident memory. Battery uses Apple's public `UIDevice` battery API. GPU usage, CPU temperature, and internal renderer FPS are not guessed because iOS does not provide one reliable public API for them.
+The design is inspired by the compact information density of emulator performance overlays, but does not copy emulator-specific counters.
 
 ## Build
-GitHub Actions → **Build and Release FPSOverlay** → **Run workflow**.
 
-The release contains the actual `FPSOverlay.dylib` file.
+The GitHub Actions workflow builds:
 
-## License
-MIT. Independent project; not affiliated with LiveContainer or Theos.
+`.theos/obj/arm64/FPSOverlay.dylib`
+
+and publishes the raw `FPSOverlay.dylib` as a GitHub Release asset.
+
+## LiveContainer
+
+Download the release `.dylib`, sign it if required by your setup, then place it in the game's Tweak Folder.
