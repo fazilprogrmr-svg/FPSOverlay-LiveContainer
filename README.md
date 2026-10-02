@@ -37,3 +37,18 @@ A compact, Steam Deck / MangoHud-inspired HUD that displays real-time gaming per
 
 ```text
 FPS 60 | CPU A15 Bionic 7%/6C | GPU Apple GPU | RAM 470M/3.6G | BATT 28% | FT 16.7ms | HZ 60 | Thermal State: Normal | ▂▃▅▇█
+
+## 💖 Support the Project
+
+If you find **FPSOverlay** useful and want to support future development, you can leave a small donation.
+
+Every bit of support helps with testing, development, and improving compatibility.
+
+### ☕ Support
+
+**Buy Me a Coffee:**  
+[☕ Support FPSOverlay](YOUR_DONATION_LINK)
+
+Thank you for supporting the project! ❤️
+
+
