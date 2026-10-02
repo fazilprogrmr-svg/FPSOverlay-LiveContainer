@@ -1,84 +1,109 @@
 #import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
 
-@interface FPSOverlayController : NSObject
+@interface FPSOverlayV2Controller : NSObject
+@property(nonatomic,strong) UIWindow *overlayWindow;
 @property(nonatomic,strong) UILabel *label;
 @property(nonatomic,strong) CADisplayLink *displayLink;
 @property(nonatomic) CFTimeInterval lastTimestamp;
-@property(nonatomic) NSUInteger frames;
-@property(nonatomic) double fps;
+@property(nonatomic) NSUInteger frameCount;
 @end
 
-@implementation FPSOverlayController
+@implementation FPSOverlayV2Controller
 
 - (void)start {
     dispatch_async(dispatch_get_main_queue(), ^{
-        [self installOverlay];
-        self.displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick:)];
-        [self.displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+        [self createOverlayWindow];
+        [self startDisplayLink];
     });
 }
 
-- (void)installOverlay {
-    UIWindow *window = nil;
+- (UIWindowScene *)activeWindowScene {
     for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-        if (scene.activationState == UISceneActivationStateForegroundActive &&
-            [scene isKindOfClass:[UIWindowScene class]]) {
-            for (UIWindow *w in ((UIWindowScene *)scene).windows) {
-                if (w.isKeyWindow) { window = w; break; }
-            }
-            if (!window) {
-                for (UIWindow *w in ((UIWindowScene *)scene).windows) {
-                    if (!w.hidden && w.alpha > 0 && w.windowLevel == UIWindowLevelNormal) {
-                        window = w; break;
-                    }
-                }
-            }
+        if (![scene isKindOfClass:[UIWindowScene class]]) continue;
+        if (scene.activationState == UISceneActivationStateForegroundActive ||
+            scene.activationState == UISceneActivationStateForegroundInactive) {
+            return (UIWindowScene *)scene;
         }
-        if (window) break;
     }
+    return nil;
+}
 
-    if (!window) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)),
-                       dispatch_get_main_queue(), ^{ [self installOverlay]; });
+- (void)createOverlayWindow {
+    UIWindowScene *scene = [self activeWindowScene];
+
+    if (!scene) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            [self createOverlayWindow];
+        });
         return;
     }
 
-    self.label = [[UILabel alloc] initWithFrame:CGRectMake(8, 8, 115, 42)];
-    self.label.text = @"FPS --";
-    self.label.textColor = UIColor.whiteColor;
-    self.label.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.65];
-    self.label.font = [UIFont monospacedDigitSystemFontOfSize:14 weight:UIFontWeightBold];
-    self.label.textAlignment = NSTextAlignmentCenter;
-    self.label.layer.cornerRadius = 7;
-    self.label.layer.masksToBounds = YES;
-    self.label.userInteractionEnabled = NO;
+    if (self.overlayWindow) return;
 
+    self.overlayWindow = [[UIWindow alloc] initWithWindowScene:scene];
+    self.overlayWindow.frame = scene.coordinateSpace.bounds;
+    self.overlayWindow.backgroundColor = UIColor.clearColor;
+    self.overlayWindow.windowLevel = UIWindowLevelAlert - 1.0;
+    self.overlayWindow.userInteractionEnabled = NO;
+
+    UIViewController *vc = [UIViewController new];
+    vc.view.backgroundColor = UIColor.clearColor;
+    self.overlayWindow.rootViewController = vc;
+
+    self.label = [[UILabel alloc] init];
     self.label.translatesAutoresizingMaskIntoConstraints = NO;
-    [window addSubview:self.label];
+    self.label.text = @"FPS V2 --";
+    self.label.numberOfLines = 2;
+    self.label.textAlignment = NSTextAlignmentCenter;
+    self.label.textColor = UIColor.whiteColor;
+    self.label.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.72];
+    self.label.font = [UIFont monospacedDigitSystemFontOfSize:13.0 weight:UIFontWeightBold];
+    self.label.layer.cornerRadius = 7.0;
+    self.label.layer.masksToBounds = YES;
 
+    [vc.view addSubview:self.label];
+
+    UILayoutGuide *safe = vc.view.safeAreaLayoutGuide;
     [NSLayoutConstraint activateConstraints:@[
-        [self.label.leadingAnchor constraintEqualToAnchor:window.leadingAnchor constant:8],
-        [self.label.topAnchor constraintEqualToAnchor:window.safeAreaLayoutGuide.topAnchor constant:8],
-        [self.label.widthAnchor constraintEqualToConstant:115],
-        [self.label.heightAnchor constraintEqualToConstant:42]
+        [self.label.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:8.0],
+        [self.label.topAnchor constraintEqualToAnchor:safe.topAnchor constant:8.0],
+        [self.label.widthAnchor constraintEqualToConstant:115.0],
+        [self.label.heightAnchor constraintEqualToConstant:44.0]
     ]];
+
+    self.overlayWindow.hidden = NO;
 }
 
-- (void)tick:(CADisplayLink *)link {
+- (void)startDisplayLink {
+    if (self.displayLink) return;
+
+    self.displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(displayTick:)];
+
+    if (@available(iOS 15.0, *)) {
+        self.displayLink.preferredFrameRateRange = CAFrameRateRangeMake(1.0, 120.0, 0.0);
+    }
+
+    [self.displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+}
+
+- (void)displayTick:(CADisplayLink *)link {
+    if (!self.label) return;
+
     if (self.lastTimestamp == 0) {
         self.lastTimestamp = link.timestamp;
         return;
     }
 
-    self.frames++;
+    self.frameCount++;
     CFTimeInterval elapsed = link.timestamp - self.lastTimestamp;
 
     if (elapsed >= 0.5) {
-        self.fps = (double)self.frames / elapsed;
-        double frameMs = self.fps > 0 ? 1000.0 / self.fps : 0;
-        self.label.text = [NSString stringWithFormat:@"FPS %.1f\n%.2f ms", self.fps, frameMs];
-        self.frames = 0;
+        double fps = (double)self.frameCount / elapsed;
+        double ms = fps > 0.0 ? 1000.0 / fps : 0.0;
+        self.label.text = [NSString stringWithFormat:@"FPS %.1f\n%.2f ms", fps, ms];
+        self.frameCount = 0;
         self.lastTimestamp = link.timestamp;
     }
 }
@@ -86,10 +111,12 @@
 @end
 
 __attribute__((constructor))
-static void FPSOverlayInit(void) {
+static void FPSOverlayV2Init(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        static FPSOverlayController *controller;
-        controller = [FPSOverlayController new];
-        [controller start];
+        static FPSOverlayV2Controller *controller = nil;
+        if (!controller) {
+            controller = [FPSOverlayV2Controller new];
+            [controller start];
+        }
     });
 }
