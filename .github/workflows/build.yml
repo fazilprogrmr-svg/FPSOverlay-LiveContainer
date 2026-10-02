@@ -13,45 +13,233 @@ jobs:
 
     steps:
 
-      # ------------------------------------------------------------
-      # 1. Checkout repository
-      # ------------------------------------------------------------
+      # 1. Download your GitHub repository
       - name: Checkout
         uses: actions/checkout@v4
 
 
-      # ------------------------------------------------------------
       # 2. Install Theos
-      # ------------------------------------------------------------
       - name: Install Theos
         uses: Randomblock1/theos-action@v1
 
 
-      # ------------------------------------------------------------
       # 3. Build FPSOverlay.dylib
-      # ------------------------------------------------------------
       - name: Build FPSOverlay
         run: |
           set -e
 
-          echo "Cleaning previous build..."
+          echo "=============================="
+          echo "Cleaning previous build"
+          echo "=============================="
+
           make clean || true
 
-          echo "Building FPSOverlay..."
+          echo "=============================="
+          echo "Building FPSOverlay"
+          echo "=============================="
+
           make FINALPACKAGE=1
 
 
-      # ------------------------------------------------------------
-      # 4. Verify Theos output
-      # ------------------------------------------------------------
+      # 4. Check that the dylib was created correctly
       - name: Verify Build
         run: |
           set -e
 
           D=".theos/obj/arm64/FPSOverlay.dylib"
 
-          echo "Checking:"
+          echo "=============================="
+          echo "Checking FPSOverlay.dylib"
+          echo "=============================="
+
+          test -f "$D"
+
+          echo "File information:"
+          file "$D"
+
+          echo ""
+          echo "Architecture:"
+          lipo -info "$D"
+
+          echo ""
+          echo "Libraries:"
+          otool -L "$D"
+
+          echo ""
+          echo "File size:"
+          ls -lh "$D"
+
+
+      # 5. Download ZSign source
+      - name: Install ZSign
+        run: |
+          set -e
+
+          echo "=============================="
+          echo "Downloading ZSign"
+          echo "=============================="
+
+          rm -rf zsign
+
+          git clone --depth 1 https://github.com/zhlynn/zsign.git zsign
+
+          echo ""
+          echo "ZSign downloaded successfully."
+
+          echo ""
+          echo "Searching for build files..."
+
+          find zsign -maxdepth 3 -type f \
+            \( -name "Makefile" -o -name "*.mk" \) \
+            -print
+
+
+      # 6. Build ZSign
+      - name: Build ZSign
+        run: |
+          set -e
+
+          echo "=============================="
+          echo "Building ZSign"
+          echo "=============================="
+
+          cd zsign
+
+          if [ -f "build/macos/Makefile" ]; then
+
+            echo "Using build/macos/Makefile"
+
+            cd build/macos
+
+            make clean || true
+            make
+
+          elif [ -f "Makefile" ]; then
+
+            echo "Using main Makefile"
+
+            make clean || true
+            make
+
+          else
+
+            echo "ERROR: ZSign Makefile not found."
+
+            echo ""
+            echo "Files inside ZSign:"
+            find . -maxdepth 4 -type f -print
+
+            exit 1
+
+          fi
+
+
+      # 7. Find the ZSign executable
+      - name: Locate ZSign
+        id: locate_zsign
+        run: |
+          set -e
+
+          echo "=============================="
+          echo "Searching for ZSign executable"
+          echo "=============================="
+
+          ZSIGN_PATH=""
+
+          # This is the location found in your previous build
+          if [ -f "./zsign/bin/zsign" ]; then
+
+            ZSIGN_PATH="./zsign/bin/zsign"
+
+          elif [ -f "./zsign/build/macos/zsign" ]; then
+
+            ZSIGN_PATH="./zsign/build/macos/zsign"
+
+          elif [ -f "./zsign/build/zsign" ]; then
+
+            ZSIGN_PATH="./zsign/build/zsign"
+
+          elif [ -f "./zsign/zsign" ]; then
+
+            ZSIGN_PATH="./zsign/zsign"
+
+          fi
+
+          if [ -z "$ZSIGN_PATH" ]; then
+
+            echo "ERROR: ZSign executable not found."
+
+            echo ""
+            echo "Files inside ZSign:"
+            find zsign -type f -print
+
+            exit 1
+
+          fi
+
+          chmod +x "$ZSIGN_PATH"
+
+          echo ""
+          echo "=============================="
+          echo "ZSign FOUND"
+          echo "=============================="
+
+          echo "Path:"
+          echo "$ZSIGN_PATH"
+
+          echo ""
+
+          echo "ZSign version:"
+          "$ZSIGN_PATH" -v || true
+
+          echo ""
+
+          echo "Saving ZSign path..."
+
+          echo "ZSIGN_PATH=$ZSIGN_PATH" >> "$GITHUB_ENV"
+
+
+      # 8. Sign FPSOverlay.dylib
+      - name: Sign FPSOverlay
+        run: |
+          set -e
+
+          D=".theos/obj/arm64/FPSOverlay.dylib"
+
+          echo "=============================="
+          echo "Signing FPSOverlay.dylib"
+          echo "=============================="
+
+          test -f "$D"
+          test -f "$ZSIGN_PATH"
+
+          echo ""
+          echo "Dylib:"
           echo "$D"
+
+          echo ""
+          echo "ZSign:"
+          echo "$ZSIGN_PATH"
+
+          echo ""
+          echo "Starting signing..."
+
+          "$ZSIGN_PATH" -a "$D"
+
+          echo ""
+          echo "Signing completed."
+
+
+      # 9. Verify the signature
+      - name: Verify Signature
+        run: |
+          set -e
+
+          D=".theos/obj/arm64/FPSOverlay.dylib"
+
+          echo "=============================="
+          echo "Verifying signed dylib"
+          echo "=============================="
 
           test -f "$D"
 
@@ -64,174 +252,8 @@ jobs:
           lipo -info "$D"
 
           echo ""
-          echo "Dependencies:"
-          otool -L "$D"
+          echo "Apple code signature information:"
 
-          echo ""
-          echo "Size:"
-          ls -lh "$D"
-
-
-      # ------------------------------------------------------------
-      # 5. Install/build ZSign for macOS
-      #
-      # The GitHub runner is macOS, so we use the macOS
-      # version of ZSign instead of the Windows zsign.exe.
-      # ------------------------------------------------------------
-      - name: Install ZSign
-        run: |
-          set -e
-
-          echo "Downloading ZSign source..."
-
-          rm -rf zsign
-
-          git clone --depth 1 \
-            https://github.com/zhlynn/zsign.git \
-            zsign
-
-          echo ""
-          echo "ZSign repository:"
-          ls -la zsign
-
-          echo ""
-          echo "Searching for build files..."
-
-          find zsign \
-            -maxdepth 3 \
-            -type f \
-            \( -name "Makefile" -o -name "*.mk" \) \
-            -print
-
-
-      # ------------------------------------------------------------
-      # 6. Build ZSign
-      #
-      # ZSign's source layout can change, so try its macOS
-      # build directory first and then fall back to the
-      # repository's standard build instructions.
-      # ------------------------------------------------------------
-      - name: Build ZSign
-        run: |
-          set -e
-
-          cd zsign
-
-          if [ -f "build/macos/Makefile" ]; then
-
-            echo "Using ZSign macOS Makefile..."
-
-            cd build/macos
-
-            make clean || true
-            make
-
-          elif [ -f "Makefile" ]; then
-
-            echo "Using root ZSign Makefile..."
-
-            make clean || true
-            make
-
-          else
-
-            echo "ZSign Makefile was not found."
-            echo "Repository contents:"
-            find . -maxdepth 3 -type f -print
-
-            exit 1
-
-          fi
-
-
-      # ------------------------------------------------------------
-      # 7. Locate ZSign executable
-      # ------------------------------------------------------------
-      - name: Locate ZSign
-        id: locate_zsign
-        run: |
-          set -e
-
-          echo "Searching for ZSign executable..."
-
-          ZSIGN_PATH=""
-
-          for candidate in \
-            "./zsign/build/macos/zsign" \
-            "./zsign/build/zsign" \
-            "./zsign/zsign"
-          do
-
-            if [ -f "$candidate" ]; then
-              ZSIGN_PATH="$candidate"
-              break
-            fi
-
-          done
-
-          if [ -z "$ZSIGN_PATH" ]; then
-
-            echo "Known path was not found."
-
-            find zsign \
-              -type f \
-              -perm +111 \
-              -print
-
-            exit 1
-          fi
-
-          chmod +x "$ZSIGN_PATH"
-
-          echo "ZSign found:"
-          echo "$ZSIGN_PATH"
-
-          "$ZSIGN_PATH" -v || true
-
-          echo "ZSIGN_PATH=$ZSIGN_PATH" >> "$GITHUB_ENV"
-
-
-      # ------------------------------------------------------------
-      # 8. Ad-hoc sign FPSOverlay.dylib
-      # ------------------------------------------------------------
-      - name: Sign FPSOverlay
-        run: |
-          set -e
-
-          D=".theos/obj/arm64/FPSOverlay.dylib"
-
-          test -f "$D"
-          test -f "$ZSIGN_PATH"
-
-          echo "Signing:"
-          echo "$D"
-
-          "$ZSIGN_PATH" -a "$D"
-
-          echo ""
-          echo "ZSign completed."
-
-
-      # ------------------------------------------------------------
-      # 9. Verify signature
-      # ------------------------------------------------------------
-      - name: Verify Signature
-        run: |
-          set -e
-
-          D=".theos/obj/arm64/FPSOverlay.dylib"
-
-          test -f "$D"
-
-          echo "Final dylib:"
-          file "$D"
-
-          echo ""
-          echo "Architecture:"
-          lipo -info "$D"
-
-          echo ""
-          echo "Code signature:"
           codesign -dvvv "$D" 2>&1 || true
 
           echo ""
@@ -240,16 +262,18 @@ jobs:
           "$ZSIGN_PATH" "$D" || true
 
           echo ""
-          echo "Final size:"
+          echo "Final file:"
           ls -lh "$D"
 
 
-      # ------------------------------------------------------------
-      # 10. Prepare release asset
-      # ------------------------------------------------------------
+      # 10. Prepare GitHub Release
       - name: Prepare Release
         run: |
           set -e
+
+          echo "=============================="
+          echo "Preparing release"
+          echo "=============================="
 
           rm -rf release
 
@@ -261,62 +285,50 @@ jobs:
 
           test -f "release/FPSOverlay.dylib"
 
-          echo "Release asset:"
-          ls -lh release/FPSOverlay.dylib
+          echo ""
+          echo "Release file:"
+          ls -lh "release/FPSOverlay.dylib"
 
 
-      # ------------------------------------------------------------
-      # 11. Create GitHub Release
-      # ------------------------------------------------------------
+      # 11. Create GitHub Release automatically
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
+
         with:
-          tag_name: "v7.1.${{ github.run_number }}"
-          name: "FPSOverlay v7.1.${{ github.run_number }}"
+
+          tag_name: "v1.0.${{ github.run_number }}"
+
+          name: "FPSOverlay v1.0.${{ github.run_number }}"
+
           body: |
-            # FPSOverlay v7.1
+            # FPSOverlay
 
-            Compact iOS game performance overlay for LiveContainer.
+            iOS game performance overlay for LiveContainer.
 
-            ## Performance
+            Features:
+
             - FPS
             - Average FPS
-            - 1% LOW
-            - 0.1% LOW
+            - 1% Low
+            - 0.1% Low
             - Frame time
             - Minimum FPS
             - Maximum FPS
-            - Display refresh rate
-            - Process RAM
-
-            ## Device
-            - Device model
-            - Apple GPU family
-            - Battery percentage
-
-            ## Visual
-            - Compact two-column HUD
-            - Upper-right placement
-            - Monospaced performance text
+            - Refresh rate
+            - RAM usage
+            - Device information
+            - GPU information
+            - Battery level
             - Live FPS graph
-            - No background panel
-            - Automatic window reattachment
-
-            ## Compatibility
-            - ARM64
-            - LiveContainer TweakLoader
-            - Primitive numeric FPS history
-            - Manual-reference-counting compatible
-
-            ## Signing
-            This release is automatically ad-hoc signed with ZSign during GitHub Actions.
 
             The release contains:
 
-            `FPSOverlay.dylib`
+            FPSOverlay.dylib
 
-            Emulator-specific counters such as EE, GS, VU, VPS and VRAM are intentionally excluded.
+            The dylib is automatically built and signed with ZSign by GitHub Actions.
 
           files: release/FPSOverlay.dylib
+
           draft: false
+
           prerelease: false
