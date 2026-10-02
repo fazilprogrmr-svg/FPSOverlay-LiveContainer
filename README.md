@@ -524,14 +524,6 @@ Features will only be added when meaningful and reliable measurements are availa
 
 FPSOverlay is an independent community project.
 
-It is not affiliated with or endorsed by:
-
-- Apple
-- LiveContainer
-- ARMSX2
-- Rockstar Games
-- Any game developer or publisher
-
 ARMSX2 is referenced only as inspiration for compact performance-overlay presentation.
 
 FPSOverlay does not include ARMSX2 code, assets, emulator components, or proprietary game files.
