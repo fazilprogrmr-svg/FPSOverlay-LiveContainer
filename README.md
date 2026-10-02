@@ -1,7 +1,3 @@
-========================
-FPSOverlay — README.md
-========================
-
 # FPSOverlay for LiveContainer
 
 A lightweight FPS and frame-time overlay tweak for iOS applications running through [LiveContainer](https://github.com/LiveContainer/LiveContainer).
@@ -227,11 +223,6 @@ Use tweaks at your own risk. The author is not responsible for crashes, data los
 This project is licensed under the MIT License.
 
 See [LICENSE](LICENSE) for details.
-
-
-========================
-LICENSE
-========================
 
 MIT License
 
