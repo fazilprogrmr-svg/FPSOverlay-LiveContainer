@@ -4,6 +4,7 @@
 #import <sys/sysctl.h>
 #import <float.h>
 #import <string.h>
+#import <dlfcn.h>
 
 #define FPS_HISTORY_SIZE 120
 #define CPU_SAMPLE_INTERVAL 0.5
@@ -130,18 +131,18 @@
 {
     NSString *model = [self deviceModel];
 
-    if ([model hasPrefix:@"iPhone 11"]) return @"A13";
-    if ([model hasPrefix:@"iPhone 12"]) return @"A14";
+    if ([model hasPrefix:@"iPhone 11"]) return @"A13 Bionic";
+    if ([model hasPrefix:@"iPhone 12"]) return @"A14 Bionic";
     if ([model isEqualToString:@"iPhone 13"] ||
         [model isEqualToString:@"iPhone 13 mini"] ||
         [model isEqualToString:@"iPhone 13 Pro"] ||
-        [model isEqualToString:@"iPhone 13 Pro Max"]) return @"A15";
+        [model isEqualToString:@"iPhone 13 Pro Max"]) return @"A15 Bionic";
     if ([model isEqualToString:@"iPhone 14"] ||
-        [model isEqualToString:@"iPhone 14 Plus"]) return @"A15";
+        [model isEqualToString:@"iPhone 14 Plus"]) return @"A15 Bionic";
     if ([model isEqualToString:@"iPhone 14 Pro"] ||
-        [model isEqualToString:@"iPhone 14 Pro Max"]) return @"A16";
+        [model isEqualToString:@"iPhone 14 Pro Max"]) return @"A16 Bionic";
     if ([model isEqualToString:@"iPhone 15"] ||
-        [model isEqualToString:@"iPhone 15 Plus"]) return @"A16";
+        [model isEqualToString:@"iPhone 15 Plus"]) return @"A16 Bionic";
     if ([model hasPrefix:@"iPhone 15 Pro"]) return @"A17 Pro";
     if ([model hasPrefix:@"iPhone 16"]) return @"A18";
     if ([model hasPrefix:@"iPhone 17"]) return @"A19";
@@ -152,18 +153,27 @@
 
 - (NSString *)gpuName
 {
-    NSString *model = [self deviceModel];
+    /*
+     * Ask Metal for the actual GPU device name instead of using the
+     * CPU/SoC name as the GPU name. This uses the system Metal function
+     * dynamically so the tweak does not need a direct Metal link.
+     */
+    void *handle = dlopen("/System/Library/Frameworks/Metal.framework/Metal", RTLD_LAZY);
+    if (handle) {
+        id (*createDevice)(void) = (id (*)(void))dlsym(handle, "MTLCreateSystemDefaultDevice");
+        if (createDevice) {
+            id device = createDevice();
+            if (device && [device respondsToSelector:NSSelectorFromString(@"name")]) {
+                NSString *name = [device name];
+                if (name.length > 0) {
+                    return name;
+                }
+            }
+        }
+        dlclose(handle);
+    }
 
-    if ([model hasPrefix:@"iPhone 11"]) return @"A13";
-    if ([model hasPrefix:@"iPhone 12"]) return @"A14";
-    if ([model hasPrefix:@"iPhone 13"]) return @"A15";
-    if ([model isEqualToString:@"iPhone 14"] || [model isEqualToString:@"iPhone 14 Plus"]) return @"A15";
-    if ([model hasPrefix:@"iPhone 14 Pro"]) return @"A16";
-    if ([model hasPrefix:@"iPhone 15 Pro"]) return @"A17";
-    if ([model hasPrefix:@"iPhone 15"]) return @"A16";
-    if ([model hasPrefix:@"iPhone 16"]) return @"A18";
-    if ([model hasPrefix:@"iPhone 17"]) return @"A19";
-    return @"Apple";
+    return @"Apple GPU";
 }
 
 - (NSInteger)cpuCoreCount
@@ -247,18 +257,88 @@
 
 #pragma mark - Battery / display
 
+- (double)statusBarBatteryPercent
+{
+    UIApplication *app = [UIApplication sharedApplication];
+
+    if (![app respondsToSelector:NSSelectorFromString(@"statusBar")]) return -1.0;
+
+    id statusBar = [app valueForKey:@"statusBar"];
+    if (!statusBar) return -1.0;
+
+    NSMutableArray *pending = [NSMutableArray arrayWithObject:statusBar];
+    NSString *batteryClassName = @"UIStatusBarBatteryItemView";
+    NSString *batteryPercentClassName = @"UIStatusBarBatteryPercentItemView";
+
+    while (pending.count > 0) {
+        id object = [pending lastObject];
+        [pending removeLastObject];
+
+        if ([object isKindOfClass:NSClassFromString(batteryPercentClassName)] ||
+            [object isKindOfClass:NSClassFromString(batteryClassName)]) {
+            @try {
+                id capacity = [object valueForKey:@"capacity"];
+                if ([capacity respondsToSelector:@selector(doubleValue)]) {
+                    double value = [capacity doubleValue];
+                    if (value >= 0.0 && value <= 100.0) return value;
+                }
+
+                id percentString = [object valueForKey:@"percentString"];
+                if ([percentString isKindOfClass:[NSString class]]) {
+                    NSString *digits = [percentString stringByReplacingOccurrencesOfString:@"%" withString:@""];
+                    double value = [digits doubleValue];
+                    if (value >= 0.0 && value <= 100.0) return value;
+                }
+            } @catch (id exception) {
+            }
+        }
+
+        if ([object isKindOfClass:[UIView class]]) {
+            NSArray *subviews = [(UIView *)object subviews];
+            for (UIView *view in subviews) {
+                [pending addObject:view];
+            }
+        }
+    }
+
+    return -1.0;
+}
+
+- (double)batteryPercent
+{
+    /*
+     * First try the value used by UIKit's status-bar battery item.
+     * This is the best match for the percentage the user actually sees.
+     */
+    double statusValue = [self statusBarBatteryPercent];
+    if (statusValue >= 0.0 && statusValue <= 100.0) {
+        return statusValue;
+    }
+
+    /*
+     * Fallback to Apple's public UIDevice batteryLevel API.
+     * Re-enable monitoring before reading so a reused LiveContainer
+     * process does not keep our previous monitoring state.
+     */
+    UIDevice *device = [UIDevice currentDevice];
+    if (!device.batteryMonitoringEnabled) {
+        device.batteryMonitoringEnabled = YES;
+    }
+
+    float level = device.batteryLevel;
+    if (level >= 0.0f && level <= 1.0f) {
+        return (double)level * 100.0;
+    }
+
+    return -1.0;
+}
+
 - (void)updateBatteryReading
 {
-    UIDevice *device = [UIDevice currentDevice];
-    device.batteryMonitoringEnabled = YES;
+    double level = [self batteryPercent];
 
-    // Use Apple's UIDevice batteryLevel directly.
-    // Do not use IOKit Current Capacity because it can differ from the
-    // user-facing battery percentage on iOS.
-    float level = device.batteryLevel;
-
-    if (level >= 0.0f && level <= 1.0f) {
-        _batteryPercent = (double)level * 100.0;
+    if (level >= 0.0 && level <= 100.0) {
+        _batteryPercent = level;
         _hasBatteryPercent = YES;
     }
 
@@ -268,7 +348,6 @@
 - (NSString *)batteryText
 {
     if (!_hasBatteryPercent) return @"--";
-
     return [NSString stringWithFormat:@"%.0f%%", _batteryPercent];
 }
 
