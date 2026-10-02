@@ -1,4 +1,4 @@
-name: Build FPSOverlay V3
+name: Build FPSOverlay V4
 
 on:
   workflow_dispatch:
@@ -19,60 +19,90 @@ jobs:
 
       - name: Build tweak
         run: |
-          make clean
+          set -e
+
+          echo "=== Cleaning ==="
+          make clean || true
+
+          echo "=== Building FPSOverlay ==="
           make FINALPACKAGE=1
 
-      - name: Find real dylib
+      - name: Inspect Theos output
         run: |
           set -e
 
-          echo "=== Searching build output ==="
+          echo "=== All dylib files ==="
+          find .theos -type f -name "*.dylib" -print
 
-          find . -type f \( -name "*.dylib" -o -name "*.debug" -o -name "*.dsym" \) -print
+          echo "=== All FPSOverlay files ==="
+          find .theos -type f -name "FPSOverlay*" -print
 
-          echo "=== Looking for FPSOverlay binaries ==="
+      - name: Copy real dylib
+        run: |
+          set -e
 
-          find . -type f -name "FPSOverlay.dylib" -print
+          REAL_DYLIB=".theos/obj/arm64/FPSOverlay.dylib"
 
-          REAL_DYLIB=$(find . \
-            -type f \
-            -name "FPSOverlay.dylib" \
-            ! -path "*/.theos/*" \
-            ! -path "*/.dSYM/*" \
-            ! -path "*/obj/*" \
-            | head -n 1)
+          echo "=== Expected dylib ==="
+          echo "$REAL_DYLIB"
 
-          if [ -z "$REAL_DYLIB" ]; then
-            echo "ERROR: Real FPSOverlay.dylib was not found"
+          if [ ! -f "$REAL_DYLIB" ]; then
+            echo "ERROR: FPSOverlay.dylib was not found!"
             exit 1
           fi
 
-          echo "Candidate: $REAL_DYLIB"
-
+          echo "=== File information ==="
           file "$REAL_DYLIB"
 
           mkdir -p artifact
+
           cp "$REAL_DYLIB" artifact/FPSOverlay.dylib
+
+          echo "=== Artifact ==="
+          ls -lh artifact/FPSOverlay.dylib
 
       - name: Verify final dylib
         run: |
           set -e
 
-          echo "=== Final file ==="
-          file artifact/FPSOverlay.dylib
+          DYLIB="artifact/FPSOverlay.dylib"
 
+          echo "================================"
+          echo "FPSOverlay V4 Verification"
+          echo "================================"
+
+          echo ""
+          echo "=== file ==="
+          file "$DYLIB"
+
+          echo ""
           echo "=== Mach-O header ==="
-          otool -hv artifact/FPSOverlay.dylib
+          otool -hv "$DYLIB"
 
+          echo ""
           echo "=== Architecture ==="
-          lipo -info artifact/FPSOverlay.dylib
+          lipo -info "$DYLIB"
 
+          echo ""
+          echo "=== Dependencies ==="
+          otool -L "$DYLIB"
+
+          echo ""
+          echo "=== Load commands ==="
+          otool -l "$DYLIB" | head -n 150
+
+          echo ""
           echo "=== File size ==="
-          ls -lh artifact/FPSOverlay.dylib
+          ls -lh "$DYLIB"
 
-      - name: Upload FPSOverlay V3
+          echo ""
+          echo "================================"
+          echo "Verification complete"
+          echo "================================"
+
+      - name: Upload FPSOverlay V4
         uses: actions/upload-artifact@v4
         with:
-          name: FPSOverlay-V3-LiveContainer
+          name: FPSOverlay-V4-LiveContainer
           path: artifact/FPSOverlay.dylib
           if-no-files-found: error
