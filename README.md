@@ -22,9 +22,34 @@ A compact, Steam Deck / MangoHud-inspired HUD that displays real-time gaming per
 ## 📱 Installation
 
 1. Download **`FPSOverlay.dylib`** from **Releases**.
-2. Add the `.dylib` to your **LiveContainer Tweak Folder**.
-3. Enable the tweak.
-4. Launch your game. 🎮
+2. Open **LiveContainer** and create a folder named **`FPS`**.
+3. Put **`FPSOverlay.dylib`** inside the **`FPS`** folder.
+4. Open the **Settings** for the game you want to use FPSOverlay with.
+5. Set the game's **Tweak Folder** to the **`FPS`** folder.
+6. Make sure **Tweak Loading** is enabled for the game.
+7. Launch your game. 🎮
+
+> **Note:** The `FPS` folder must be selected in the **Tweak Folder** setting for each game you want to use FPSOverlay with.
+
+## 📁 Folder Structure
+
+```text
+LiveContainer
+└── FPS
+    └── FPSOverlay.dylib
+```
+
+## 🎮 Per-Game Setup
+
+```text
+Game Settings
+      ↓
+Tweak Folder
+      ↓
+FPS
+      ↓
+FPSOverlay.dylib
+```
 
 ## 🎮 Tested Games
 
