@@ -5,11 +5,72 @@
 #import <float.h>
 #import <string.h>
 #import <dlfcn.h>
+#import <objc/runtime.h>
+#import <objc/message.h>
 
 #define FPS_HISTORY_SIZE 120
 #define CPU_SAMPLE_INTERVAL 0.5
 #define OVERLAY_REFRESH_INTERVAL 0.5
 #define BATTERY_SAMPLE_INTERVAL 2.0
+
+static FPSOverlayController *gFPSOverlayController = nil;
+
+/*
+ * Metal presentation counter. CADisplayLink fires with the display refresh
+ * cadence (for example 60 Hz) even when a Metal game is only presenting
+ * 30 rendered frames per second. Count actual Metal drawable presentations
+ * instead so FPS/Frame Time follows the rendered frame cadence.
+ */
+static volatile uint64_t gMetalPresentedFrames = 0;
+static IMP gOriginalCAMetalLayerNextDrawable = NULL;
+static const void *kFPSOverlayPresentedHandlerKey = &kFPSOverlayPresentedHandlerKey;
+
+typedef id (*FPSNextDrawableIMP)(id, SEL);
+typedef void (*FPSAddPresentedHandlerIMP)(id, SEL, id);
+
+static void FPSOverlayAttachPresentedHandler(id drawable)
+{
+    if (!drawable) return;
+
+    SEL addHandlerSEL = NSSelectorFromString(@"addPresentedHandler:");
+    if (![drawable respondsToSelector:addHandlerSEL]) return;
+
+    /* A drawable object can be reused for many frames. Attach once. */
+    if (objc_getAssociatedObject(drawable, kFPSOverlayPresentedHandlerKey)) return;
+
+    id marker = [[NSObject alloc] init];
+    objc_setAssociatedObject(drawable, kFPSOverlayPresentedHandlerKey, marker, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    [marker release];
+
+    FPSAddPresentedHandlerIMP addHandler = (FPSAddPresentedHandlerIMP)objc_msgSend;
+    id handler = [[^(id presentedDrawable) {
+        __sync_fetch_and_add(&gMetalPresentedFrames, 1);
+    } copy] autorelease];
+
+    addHandler(drawable, addHandlerSEL, handler);
+}
+
+static id FPSOverlay_CAMetalLayer_nextDrawable(id self, SEL _cmd)
+{
+    if (!gOriginalCAMetalLayerNextDrawable) return nil;
+
+    FPSNextDrawableIMP original = (FPSNextDrawableIMP)gOriginalCAMetalLayerNextDrawable;
+    id drawable = original(self, _cmd);
+    FPSOverlayAttachPresentedHandler(drawable);
+    return drawable;
+}
+
+static void FPSOverlayInstallMetalFrameHook(void)
+{
+    Class metalLayerClass = NSClassFromString(@"CAMetalLayer");
+    SEL nextDrawableSEL = NSSelectorFromString(@"nextDrawable");
+    Method method = metalLayerClass ? class_getInstanceMethod(metalLayerClass, nextDrawableSEL) : NULL;
+    if (!method) return;
+
+    gOriginalCAMetalLayerNextDrawable = method_getImplementation(method);
+    method_setImplementation(method, (IMP)FPSOverlay_CAMetalLayer_nextDrawable);
+}
+
 
 @interface FPSOverlayController : NSObject
 {
@@ -26,6 +87,11 @@
 
     double _fpsHistory[FPS_HISTORY_SIZE];
     NSInteger _historyCount;
+
+    uint64_t _lastMetalPresentedFrames;
+    CFTimeInterval _lastFPSSampleTime;
+    double _measuredFPS;
+    BOOL _hasMetalFPS;
 
     double _cpuPercent;
     uint64_t _previousUserTime;
@@ -51,6 +117,10 @@
         _lastTimestamp = 0.0;
         _frameCount = 0;
         _historyCount = 0;
+        _lastMetalPresentedFrames = 0;
+        _lastFPSSampleTime = 0.0;
+        _measuredFPS = 0.0;
+        _hasMetalFPS = NO;
         _cpuPercent = 0.0;
         _previousUserTime = 0;
         _previousSystemTime = 0;
@@ -453,8 +523,8 @@
         _label.font = [UIFont monospacedDigitSystemFontOfSize:[self fontSizeForWindow:_hostWindow] weight:UIFontWeightSemibold];
     }
 
-    double fps = 0.0;
-    if (_historyCount > 0) fps = _fpsHistory[_historyCount - 1];
+    double fps = _measuredFPS;
+    if (fps <= 0.0 && _historyCount > 0) fps = _fpsHistory[_historyCount - 1];
 
     NSString *cpu = [self cpuName];
     NSString *gpu = [self gpuName];
@@ -529,7 +599,63 @@
 
 - (void)refreshWindowTimer:(NSTimer *)timer
 {
+    [self sampleFPS];
     [self refreshWindow];
+}
+
+- (void)sampleFPS
+{
+    CFTimeInterval now = CACurrentMediaTime();
+    if (_lastFPSSampleTime == 0.0) {
+        _lastFPSSampleTime = now;
+        _lastMetalPresentedFrames = gMetalPresentedFrames;
+        return;
+    }
+
+    CFTimeInterval elapsed = now - _lastFPSSampleTime;
+    if (elapsed < 0.25) return;
+
+    uint64_t currentFrames = gMetalPresentedFrames;
+    uint64_t deltaFrames = currentFrames - _lastMetalPresentedFrames;
+    double metalFPS = (double)deltaFrames / elapsed;
+
+    _lastMetalPresentedFrames = currentFrames;
+    _lastFPSSampleTime = now;
+
+    /*
+     * If Metal presented frames recently, use those presentations as the
+     * authoritative game FPS. Otherwise fall back to CADisplayLink for
+     * OpenGL/Core Animation games.
+     */
+    if (deltaFrames > 0) {
+        if (metalFPS > 0.0 && metalFPS < 240.0) {
+            _measuredFPS = metalFPS;
+            _hasMetalFPS = YES;
+        }
+    } else if (_hasMetalFPS) {
+        /* No presentation during this sample: the game may be paused. */
+        _measuredFPS = 0.0;
+    }
+
+    if (!_hasMetalFPS) {
+        /* CADisplayLink fallback is updated in frameTick:. */
+        [self updateLabel];
+    } else {
+        [self appendFPSHistory:_measuredFPS];
+        [self updateLabel];
+    }
+}
+
+- (void)appendFPSHistory:(double)fps
+{
+    if (fps <= 0.0 || fps >= 240.0) return;
+
+    if (_historyCount < FPS_HISTORY_SIZE) {
+        _fpsHistory[_historyCount++] = fps;
+    } else {
+        memmove(&_fpsHistory[0], &_fpsHistory[1], sizeof(double) * (FPS_HISTORY_SIZE - 1));
+        _fpsHistory[FPS_HISTORY_SIZE - 1] = fps;
+    }
 }
 
 - (void)refreshWindow
@@ -604,6 +730,13 @@
 
 - (void)frameTick:(CADisplayLink *)link
 {
+    /*
+     * Fallback for games that do not use Metal. A CADisplayLink callback
+     * represents a display update, not necessarily a newly rendered game
+     * frame, so it is never used when Metal presentation data is available.
+     */
+    if (_hasMetalFPS) return;
+
     if (_lastTimestamp == 0.0) {
         _lastTimestamp = link.timestamp;
         _frameCount = 0;
@@ -617,12 +750,8 @@
     double fps = (double)_frameCount / elapsed;
 
     if (fps > 0.0 && fps < 240.0) {
-        if (_historyCount < FPS_HISTORY_SIZE) {
-            _fpsHistory[_historyCount++] = fps;
-        } else {
-            memmove(&_fpsHistory[0], &_fpsHistory[1], sizeof(double) * (FPS_HISTORY_SIZE - 1));
-            _fpsHistory[FPS_HISTORY_SIZE - 1] = fps;
-        }
+        _measuredFPS = fps;
+        [self appendFPSHistory:fps];
         [self updateLabel];
     }
 
@@ -634,11 +763,11 @@
 
 #pragma mark - Initialization
 
-static FPSOverlayController *gFPSOverlayController = nil;
-
 __attribute__((constructor))
 static void FPSOverlayInit(void)
 {
+    FPSOverlayInstallMetalFrameHook();
+
     dispatch_async(dispatch_get_main_queue(), ^{
         gFPSOverlayController = [[FPSOverlayController alloc] init];
 
