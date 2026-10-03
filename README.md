@@ -1,25 +1,25 @@
-# 🎮 FPSOverlay
+# FPSOverlay
 
 > **A lightweight performance overlay for iOS games running through LiveContainer.**
 
 A compact, Steam Deck / MangoHud-inspired HUD that displays real-time gaming performance information without covering the gameplay.
 
-## ✨ Features
+## Features
 
-- 🎯 **FPS**
-- 🧠 **CPU name & usage**
-- 🎨 **GPU name**
-- 💾 **RAM usage / total RAM**
-- 🔋 **Battery percentage**
-- ⏱️ **Frame Time**
-- 🖥️ **Screen HZ**
-- 🌡️ **Thermal State**
-- 📈 **Small live FPS graph**
-- 🖤 **Transparent black HUD**
-- 📱 **LiveContainer compatible**
-- 🎨 **Compact one-line design**
+-  **FPS**
+-  **CPU name & usage**
+-  **GPU name**
+-  **RAM usage / total RAM**
+-  **Battery percentage**
+-  **Frame Time**
+-  **Screen HZ**
+-  **Thermal State**
+-  **Small live FPS graph**
+-  **Transparent black HUD**
+-  **LiveContainer compatible**
+-  **Compact one-line design**
 
-## 📱 Installation
+##  Installation
 
 1. Download **`FPSOverlay.dylib`** from **Releases**.
 2. Open **LiveContainer** and create a folder named **`FPS`**.
@@ -27,7 +27,7 @@ A compact, Steam Deck / MangoHud-inspired HUD that displays real-time gaming per
 4. Open the **Settings** for the game you want to use FPSOverlay with.
 5. Set the game's **Tweak Folder** to the **`FPS`** folder.
 6. Make sure **Tweak Loading** is enabled for the game.
-7. Launch your game. 🎮
+7. Launch your game. 
 
 > **Note:** The `FPS` folder must be selected in the **Tweak Folder** setting for each game you want to use FPSOverlay with.
 
@@ -51,7 +51,7 @@ FPS
 FPSOverlay.dylib
 ```
 
-## 🎮 Tested Games
+##  Tested Games
 
 - ✅ Amazing Spider-Man
 - ✅ Bully
