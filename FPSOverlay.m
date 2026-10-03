@@ -13,6 +13,7 @@
 #define OVERLAY_REFRESH_INTERVAL 0.5
 #define BATTERY_SAMPLE_INTERVAL 2.0
 
+@class FPSOverlayController;
 static FPSOverlayController *gFPSOverlayController = nil;
 
 /*
