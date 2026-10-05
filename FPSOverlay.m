@@ -90,6 +90,7 @@ static void FPSOverlayInstallMetalFrameHook(void)
 {
     UIView *_gestureOverlay;
     UILabel *_label;
+    UIImageView *_gameIconView;
     UIView *_glassContainer;
     UIVisualEffectView *_blurView;
     UIWindow *_hostWindow;
@@ -178,6 +179,7 @@ static void FPSOverlayInstallMetalFrameHook(void)
     [_cpuTimer invalidate];
     [_displayLink invalidate];
     [_label removeFromSuperview];
+    [_gameIconView removeFromSuperview];
     [_glassContainer removeFromSuperview];
     [_gestureOverlay removeFromSuperview];
     if (_tripleTapGesture && _tripleTapGesture.view) {
@@ -192,9 +194,9 @@ static void FPSOverlayInstallMetalFrameHook(void)
 - (NSString *)presetName:(FPSOverlayPreset)preset
 {
     switch (preset) {
-        case FPSOverlayPresetPS5: return @"PS5 Blue";
+        case FPSOverlayPresetPS5: return @"PlayStation";
         case FPSOverlayPresetXbox: return @"Xbox Green";
-        case FPSOverlayPresetWindows: return @"Windows Blue";
+        case FPSOverlayPresetWindows: return @"Windows Fluent";
         case FPSOverlayPresetSteamDeck: return @"Steam Deck";
         case FPSOverlayPresetNeon: return @"Neon Cyber";
         case FPSOverlayPresetClassicDark: return @"Classic Dark";
@@ -444,7 +446,8 @@ static void FPSOverlayInstallMetalFrameHook(void)
 
     CGFloat pad = 8.0;
     CGFloat maxWidth = window.bounds.size.width - (pad * 2.0);
-    CGFloat width = _label.bounds.size.width + 28.0;
+    CGFloat iconSpace = _gameIconView ? 28.0 : 0.0;
+    CGFloat width = _label.bounds.size.width + 28.0 + iconSpace;
     if (width > maxWidth) width = maxWidth;
 
     CGFloat height = 38.0;
@@ -462,7 +465,13 @@ static void FPSOverlayInstallMetalFrameHook(void)
     _glassContainer.frame = frame;
     _gestureOverlay.frame = _glassContainer.frame;
     _blurView.frame = _glassContainer.bounds;
-    _label.frame = CGRectMake(10.0, 8.0, frame.size.width - 20.0, frame.size.height - 16.0);
+
+    CGFloat left = 10.0;
+    if (_gameIconView) {
+        _gameIconView.frame = CGRectMake(9.0, 9.0, 20.0, 20.0);
+        left = 35.0;
+    }
+    _label.frame = CGRectMake(left, 8.0, frame.size.width - left - 10.0, frame.size.height - 16.0);
 }
 
 #pragma mark - Device
@@ -820,6 +829,51 @@ static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(UIColor *tintColor)
     return container;
 }
 
+- (UIImage *)loadGameIcon
+{
+    NSBundle *bundle = [NSBundle mainBundle];
+    NSDictionary *icons = [bundle objectForInfoDictionaryKey:@"CFBundleIcons"];
+    NSDictionary *primary = [icons objectForKey:@"CFBundlePrimaryIcon"];
+    NSArray *iconFiles = [primary objectForKey:@"CFBundleIconFiles"];
+
+    for (NSString *name in iconFiles) {
+        UIImage *image = [UIImage imageNamed:name];
+        if (!image) image = [UIImage imageNamed:[name stringByDeletingPathExtension]];
+        if (image) return image;
+    }
+
+    NSArray *legacyFiles = [bundle objectForInfoDictionaryKey:@"CFBundleIconFiles"];
+    for (NSString *name in legacyFiles) {
+        UIImage *image = [UIImage imageNamed:name];
+        if (!image) image = [UIImage imageNamed:[name stringByDeletingPathExtension]];
+        if (image) return image;
+    }
+
+    NSArray *candidates = @[@"AppIcon60x60", @"AppIcon76x76", @"AppIcon120x120", @"AppIcon152x152"];
+    for (NSString *name in candidates) {
+        UIImage *image = [UIImage imageNamed:name];
+        if (image) return image;
+    }
+
+    return nil;
+}
+
+- (UIImageView *)makeGameIconView
+{
+    UIImage *icon = [self loadGameIcon];
+    if (!icon) return nil;
+
+    UIImageView *view = [[UIImageView alloc] initWithImage:icon];
+    view.contentMode = UIViewContentModeScaleAspectFit;
+    view.clipsToBounds = YES;
+    view.layer.cornerRadius = 5.0;
+    view.layer.borderWidth = 0.6;
+    view.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.28].CGColor;
+    view.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.06];
+    view.userInteractionEnabled = NO;
+    return view;
+}
+
 - (UILabel *)makeLabel
 {
     UILabel *label = [[UILabel alloc] init];
@@ -852,12 +906,15 @@ static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(UIColor *tintColor)
     _tripleTapGesture = nil;
 
     [_label removeFromSuperview];
+    [_gameIconView removeFromSuperview];
     [_glassContainer removeFromSuperview];
     [_gestureOverlay removeFromSuperview];
     [_label release];
+    [_gameIconView release];
     [_glassContainer release];
     [_gestureOverlay release];
     _label = nil;
+    _gameIconView = nil;
     _glassContainer = nil;
     _gestureOverlay = nil;
     _blurView = nil;
@@ -874,6 +931,12 @@ static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(UIColor *tintColor)
     _label = [self makeLabel];
     _label.font = [UIFont monospacedDigitSystemFontOfSize:[self fontSizeForWindow:window] weight:UIFontWeightSemibold];
     [_glassContainer addSubview:_label];
+
+    /* Small game icon: the HUD uses the game's own app icon as a theme accent. */
+    _gameIconView = [self makeGameIconView];
+    if (_gameIconView) {
+        [_glassContainer addSubview:_gameIconView];
+    }
     
     /* Gesture overlay for drag, double-tap compact mode and long-press theme cycle. */
     _gestureOverlay = [[UIView alloc] init];
