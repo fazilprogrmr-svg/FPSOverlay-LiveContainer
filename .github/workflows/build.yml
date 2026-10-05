@@ -23,34 +23,38 @@ jobs:
         uses: Randomblock1/theos-action@v1
 
 
-      # 3. Build FPSOverlay.dylib
+      # 3. Build FPSOverlay
       - name: Build FPSOverlay
         run: |
           set -e
 
-          echo "=============================="
+          echo "========================================"
           echo "Cleaning previous build"
-          echo "=============================="
+          echo "========================================"
 
           make clean || true
 
-          echo "=============================="
+          echo ""
+          echo "========================================"
           echo "Building FPSOverlay"
-          echo "=============================="
+          echo "========================================"
 
           make FINALPACKAGE=1
 
+          echo ""
+          echo "Build completed."
 
-      # 4. Verify dylib
+
+      # 4. Verify FPSOverlay.dylib
       - name: Verify Build
         run: |
           set -e
 
           D=".theos/obj/arm64/FPSOverlay.dylib"
 
-          echo "=============================="
-          echo "Checking FPSOverlay.dylib"
-          echo "=============================="
+          echo "========================================"
+          echo "Verifying FPSOverlay.dylib"
+          echo "========================================"
 
           test -f "$D"
 
@@ -63,7 +67,7 @@ jobs:
           lipo -info "$D"
 
           echo ""
-          echo "Libraries:"
+          echo "Linked libraries:"
           otool -L "$D"
 
           echo ""
@@ -76,21 +80,23 @@ jobs:
         run: |
           set -e
 
-          echo "=============================="
+          echo "========================================"
           echo "Downloading ZSign"
-          echo "=============================="
+          echo "========================================"
 
           rm -rf zsign
 
-          git clone --depth 1 https://github.com/zhlynn/zsign.git zsign
+          git clone --depth 1 \
+            https://github.com/zhlynn/zsign.git \
+            zsign
 
           echo ""
           echo "ZSign downloaded successfully."
 
           echo ""
-          echo "Searching for build files..."
+          echo "Searching ZSign build files..."
 
-          find zsign -maxdepth 3 -type f \
+          find zsign -maxdepth 4 -type f \
             \( -name "Makefile" -o -name "*.mk" \) \
             -print
 
@@ -100,68 +106,76 @@ jobs:
         run: |
           set -e
 
-          echo "=============================="
+          echo "========================================"
           echo "Building ZSign"
-          echo "=============================="
+          echo "========================================"
 
-          cd zsign
+          if [ -f "zsign/build/macos/Makefile" ]; then
 
-          if [ -f "build/macos/Makefile" ]; then
+            echo "Using zsign/build/macos/Makefile"
 
-            echo "Using build/macos/Makefile"
-
-            cd build/macos
+            cd zsign/build/macos
 
             make clean || true
             make
 
-          elif [ -f "Makefile" ]; then
+            cd ../../..
 
-            echo "Using main Makefile"
+          elif [ -f "zsign/Makefile" ]; then
+
+            echo "Using zsign/Makefile"
+
+            cd zsign
 
             make clean || true
             make
+
+            cd ..
 
           else
 
             echo "ERROR: ZSign Makefile not found."
 
             echo ""
-            echo "Files inside ZSign:"
-            find . -maxdepth 4 -type f
+            echo "ZSign files:"
+            find zsign -maxdepth 5 -type f -print
 
             exit 1
 
           fi
 
 
-      # 7. Locate ZSign
+      # 7. Locate ZSign executable
       - name: Locate ZSign
         id: locate_zsign
         run: |
           set -e
 
-          echo "=============================="
-          echo "Searching for ZSign executable"
-          echo "=============================="
+          echo "========================================"
+          echo "Locating ZSign executable"
+          echo "========================================"
 
           ZSIGN_PATH=""
 
-          if [ -f "./zsign/bin/zsign" ]; then
-
+          if [ -x "./zsign/bin/zsign" ]; then
             ZSIGN_PATH="./zsign/bin/zsign"
 
-          elif [ -f "./zsign/build/macos/zsign" ]; then
-
+          elif [ -x "./zsign/build/macos/zsign" ]; then
             ZSIGN_PATH="./zsign/build/macos/zsign"
 
-          elif [ -f "./zsign/build/zsign" ]; then
-
+          elif [ -x "./zsign/build/zsign" ]; then
             ZSIGN_PATH="./zsign/build/zsign"
 
-          elif [ -f "./zsign/zsign" ]; then
-
+          elif [ -x "./zsign/zsign" ]; then
             ZSIGN_PATH="./zsign/zsign"
+
+          else
+
+            FOUND=$(find zsign -type f -name "zsign" -perm -111 | head -n 1 || true)
+
+            if [ -n "$FOUND" ]; then
+              ZSIGN_PATH="$FOUND"
+            fi
 
           fi
 
@@ -180,35 +194,34 @@ jobs:
           chmod +x "$ZSIGN_PATH"
 
           echo ""
-          echo "=============================="
+          echo "========================================"
           echo "ZSign FOUND"
-          echo "=============================="
+          echo "========================================"
 
           echo "Path:"
           echo "$ZSIGN_PATH"
 
           echo ""
+          echo "Version:"
 
-          echo "ZSign version:"
           "$ZSIGN_PATH" -v || true
 
           echo ""
-
           echo "Saving ZSign path..."
 
           echo "ZSIGN_PATH=$ZSIGN_PATH" >> "$GITHUB_ENV"
 
 
-      # 8. Sign FPSOverlay
+      # 8. Sign FPSOverlay.dylib
       - name: Sign FPSOverlay
         run: |
           set -e
 
           D=".theos/obj/arm64/FPSOverlay.dylib"
 
-          echo "=============================="
+          echo "========================================"
           echo "Signing FPSOverlay.dylib"
-          echo "=============================="
+          echo "========================================"
 
           test -f "$D"
           test -f "$ZSIGN_PATH"
@@ -227,19 +240,19 @@ jobs:
           "$ZSIGN_PATH" -a "$D"
 
           echo ""
-          echo "Signing completed."
+          echo "Signing completed successfully."
 
 
-      # 9. Verify signature
+      # 9. Verify signed dylib
       - name: Verify Signature
         run: |
           set -e
 
           D=".theos/obj/arm64/FPSOverlay.dylib"
 
-          echo "=============================="
+          echo "========================================"
           echo "Verifying signed dylib"
-          echo "=============================="
+          echo "========================================"
 
           test -f "$D"
 
@@ -252,17 +265,15 @@ jobs:
           lipo -info "$D"
 
           echo ""
-          echo "Apple code signature information:"
-
+          echo "Apple code signature:"
           codesign -dvvv "$D" 2>&1 || true
 
           echo ""
           echo "ZSign verification:"
-
           "$ZSIGN_PATH" "$D" || true
 
           echo ""
-          echo "Final file:"
+          echo "Final dylib:"
           ls -lh "$D"
 
 
@@ -271,12 +282,11 @@ jobs:
         run: |
           set -e
 
-          echo "=============================="
+          echo "========================================"
           echo "Preparing release"
-          echo "=============================="
+          echo "========================================"
 
           rm -rf release
-
           mkdir -p release
 
           cp \
@@ -293,7 +303,6 @@ jobs:
       # 11. Create GitHub Release
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
-
         with:
 
           tag_name: "v2.0.${{ github.run_number }}"
@@ -301,123 +310,63 @@ jobs:
           name: "FPSOverlay v2.0.${{ github.run_number }}"
 
           body: |
-            # FPSOverlay v2
+            # FPSOverlay
 
-            A lightweight iOS game performance overlay for games running through LiveContainer.
+            Lightweight iOS game performance overlay for games running through LiveContainer.
 
-            ## What's New
+            ## Features
 
-            ### New Theme System
-
-            Added 10 distinct HUD themes with their own visual identity:
-
+            - Real Metal presentation FPS
+            - Real frame time
+            - CPU name and process usage
+            - GPU name
+            - RAM usage
+            - Battery level
+            - Display refresh rate
+            - Thermal state
+            - Live FPS graph
+            - Game icon
+            - 10 visual themes
             - iPhone Liquid Glass
             - PlayStation
             - Xbox
             - Windows Fluent
             - Steam Deck
-            - Cyber Neon
-            - ROG Gaming
-            - Minimal
-            - MangoHUD
             - Nintendo
+            - ROG Gaming
+            - Cyber Neon
+            - MangoHUD
+            - Minimal
 
-            The themes are designed as separate visual styles rather than simply changing the HUD accent color.
-
-            ### iPhone Liquid Glass
-
-            - Native `UIGlassEffect` support when available
-            - Transparent glass surface
-            - No forced dark mode
-            - No artificial black background
-            - No artificial white background
-            - No fake colored glass tint
-            - Transparent fallback when native Liquid Glass is unavailable
-
-            ### New Display Modes
+            ## Display Modes
 
             - Full Performance
             - Text Only
             - FPS Only
 
-            Text Only removes the HUD panel completely and displays performance information directly over the game.
-
-            FPS Only displays only the current FPS value.
-
-            ### New Overlay Layouts
+            ## Layouts
 
             - Horizontal
             - Vertical
 
-            Horizontal keeps the compact one-line HUD.
+            ## Controls
 
-            Vertical arranges the performance metrics into a compact stacked layout.
-
-            ### Performance Monitoring
-
-            - Real rendered FPS measurement
-            - Metal drawable presentation based FPS tracking
-            - Frame Time
-            - CPU usage
-            - CPU/device information
-            - GPU/device information
-            - RAM usage
-            - Total RAM
-            - Battery percentage
-            - Display refresh rate
-            - Thermal state
-            - Live FPS graph
-
-            FPS and Frame Time are based on actual Metal presentation events instead of simply counting display refresh callbacks.
-
-            ### HUD Improvements
-
-            - Game icon support
-            - Adaptive HUD sizing
-            - Compact mode
-            - Theme indicator
-            - Saved theme selection
-            - Saved layout selection
-            - Saved display mode
-            - Saved HUD position
-            - Draggable HUD
-            - Improved readability
-            - Theme-specific decorations and accents
-
-            ### Gesture Controls
-
-            - Double tap: Toggle compact mode
-            - Triple tap: Hide/show overlay
+            - Drag: Move overlay
+            - Double-tap: Compact / Full
+            - Triple-tap: Hide / Show
             - Long press: Change theme
-            - Two-finger tap: Switch Horizontal/Vertical layout
-            - Two-finger double tap: Switch display mode
-
-            ## Installation
-
-            1. Download `FPSOverlay.dylib`.
-            2. Create or use an `FPS` folder in LiveContainer.
-            3. Place `FPSOverlay.dylib` inside the folder.
-            4. Open the game's settings.
-            5. Select `FPS` as the Tweak Folder.
-            6. Enable Tweak Loading.
-            7. Launch the game.
+            - Two-finger tap: Horizontal / Vertical
+            - Two-finger double-tap: Change display mode
 
             ## Build
 
-            The dylib is automatically:
+            The dylib is automatically built with Theos and signed with ZSign using GitHub Actions.
 
-            - Built with Theos
-            - Verified as ARM64
-            - Signed with ZSign
-            - Signature checked
-            - Attached automatically to this GitHub Release
+            Release file:
 
-            ## File
-
-            `FPSOverlay.dylib`
+            FPSOverlay.dylib
 
           files: release/FPSOverlay.dylib
 
           draft: false
-
           prerelease: false
