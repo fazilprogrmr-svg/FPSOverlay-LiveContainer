@@ -1,106 +1,92 @@
 # FPSOverlay
 
-> **A lightweight performance overlay for iOS games running through LiveContainer.**
+A lightweight iOS game performance overlay for games running through LiveContainer.
 
-A compact, Steam Deck / MangoHud-inspired HUD that displays real-time gaming performance information without covering the gameplay.
+Displays real-time FPS, CPU, GPU, RAM, battery, frame time, refresh rate, thermal state and a live FPS graph.
 
-## Features
+## Installation
 
--  **FPS**
--  **CPU name & usage**
--  **GPU name**
--  **RAM usage / total RAM**
--  **Battery percentage**
--  **Frame Time**
--  **Screen HZ**
--  **Thermal State**
--  **Small live FPS graph**
--  **Transparent black HUD**
--  **LiveContainer compatible**
--  **Compact one-line design**
--  **Drag to reposition**
--  **Double-tap compact/full toggle**
--  **Triple-tap hide/show overlay**
--  **Long-press theme cycle**
--  **Saved theme profiles: Default, Minimal, Neon, Performance**
--  **Selective metric visibility for cleaner HUD layouts**
+1. Download `FPSOverlay.dylib` from **Releases**.
+2. Open **LiveContainer**.
+3. Create a folder named `FPS`.
+4. Put `FPSOverlay.dylib` inside the `FPS` folder.
+5. Open the settings for your game.
+6. Set **Tweak Folder** to `FPS`.
+7. Enable **Tweak Loading**.
+8. Launch the game.
 
-##  Installation
+> The `FPS` folder must be selected separately for each game.
 
-1. Download **`FPSOverlay.dylib`** from **Releases**.
-2. Open **LiveContainer** and create a folder named **`FPS`**.
-3. Put **`FPSOverlay.dylib`** inside the **`FPS`** folder.
-4. Open the **Settings** for the game you want to use FPSOverlay with.
-5. Set the game's **Tweak Folder** to the **`FPS`** folder.
-6. Make sure **Tweak Loading** is enabled for the game.
-7. Launch your game. 
+## How to Use
 
-> **Note:** The `FPS` folder must be selected in the **Tweak Folder** setting for each game you want to use FPSOverlay with.
+### Move the Overlay
 
-## Quick Controls
+**Drag** the HUD to move it anywhere on the screen.
 
-- Drag the overlay to reposition it anywhere on the screen.
-- Double-tap the overlay to switch between full and compact mode.
-- Triple-tap the overlay to hide or show the HUD.
-- Long-press the overlay to cycle through themes: Default → Minimal → Neon → Performance.
+### Compact / Full
 
-## Theme Profiles
+**Double-tap** the HUD to switch between compact and full display.
 
-FPSOverlay now supports multiple visual layouts while keeping the same core metrics.
+### Hide / Show
 
-- **Default**: balanced full HUD with all metrics visible.
-- **Minimal**: compact, lighter HUD with only the essentials.
-- **Neon**: brighter contrast and more cinematic visual styling.
-- **Performance**: high-visibility mode for benchmarks and debugging sessions.
+**Triple-tap** to hide the HUD.
 
-## Metric Controls
+**Triple-tap again** to show it.
 
-Each theme configures which stats are shown, including:
+### Change Theme
+
+**Long-press** the HUD to cycle through the available themes.
+
+Themes:
+
+- iPhone Liquid Glass
+- PlayStation
+- Xbox
+- Windows Fluent
+- Steam Deck
+- Cyber Neon
+- ROG Gaming
+- Minimal
+- MangoHUD
+- Nintendo
+
+### Change Layout
+
+**Two-finger tap** to switch between:
+
+- Horizontal
+- Vertical
+
+### Change Display Mode
+
+**Two-finger double-tap** to cycle through:
+
+- Full Performance
+- Text Only
+- FPS Only
+
+### Game Icon
+
+The HUD can display the current game's icon automatically.
+
+## Performance Information
 
 - FPS
-- CPU
-- GPU
-- RAM
+- CPU usage
+- CPU/device name
+- GPU name
+- RAM usage
 - Battery
 - Frame Time
-- HZ
+- Refresh Rate
 - Thermal State
-- Graph
+- Live FPS graph
 
-This allows a more focused display depending on whether you want a clean cinematic view or full performance diagnostics.
+FPS and Frame Time are measured from actual Metal presentation events.
 
-## 📁 Folder Structure
+## Folder Structure
 
 ```text
 LiveContainer
 └── FPS
     └── FPSOverlay.dylib
-```
-
-## 🎮 Per-Game Setup
-
-```text
-Game Settings
-      ↓
-Tweak Folder
-      ↓
-FPS
-      ↓
-FPSOverlay.dylib
-```
-
-##  Tested Games
-
-- ✅ Amazing Spider-Man
-- ✅ Bully
-- ✅ Alien: Isolation
-- ✅ Other LiveContainer games
-
-⭐ **Like FPSOverlay? Drop a star on GitHub! It helps a lot.** ❤️
-
-
-## 📊 HUD
-
-```text
-FPS 60 | CPU A15 Bionic 7%/6C | GPU Apple GPU | RAM 470M/3.6G | BATT 28% | FT 16.7ms | HZ 60 | Thermal State: Normal | ▂▃▅▇█
-```
