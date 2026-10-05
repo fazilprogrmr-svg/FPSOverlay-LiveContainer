@@ -16,7 +16,7 @@
 typedef NS_ENUM(NSInteger, FPSOverlayPreset) {
     FPSOverlayPresetDefault = 0,
     FPSOverlayPresetMinimal = 1,
-    FPSOverlayPresetCompetitive = 2,
+    FPSOverlayPresetNeon = 2,
     FPSOverlayPresetPerformance = 3
 };
 
@@ -176,7 +176,7 @@ static void FPSOverlayInstallMetalFrameHook(void)
 {
     switch (preset) {
         case FPSOverlayPresetMinimal: return @"Minimal";
-        case FPSOverlayPresetCompetitive: return @"Competitive";
+        case FPSOverlayPresetNeon: return @"Neon";
         case FPSOverlayPresetPerformance: return @"Performance";
         case FPSOverlayPresetDefault:
         default: return @"Default";
@@ -192,9 +192,9 @@ static void FPSOverlayInstallMetalFrameHook(void)
             _compactMode = YES;
             _hudOpacity = 0.32;
             break;
-        case FPSOverlayPresetCompetitive:
-            _compactMode = YES;
-            _hudOpacity = 0.46;
+        case FPSOverlayPresetNeon:
+            _compactMode = NO;
+            _hudOpacity = 0.60;
             break;
         case FPSOverlayPresetPerformance:
             _compactMode = NO;
@@ -777,6 +777,17 @@ static void FPSOverlayInstallMetalFrameHook(void)
     UIColor *orange = [UIColor colorWithRed:1.0 green:0.70 blue:0.25 alpha:1.0];
     UIColor *purple = [UIColor colorWithRed:0.75 green:0.55 blue:1.0 alpha:1.0];
 
+    if (_preset == FPSOverlayPresetNeon) {
+        cyan = [UIColor colorWithRed:0.18 green:0.98 blue:1.0 alpha:1.0];
+        green = [UIColor colorWithRed:0.25 green:1.0 blue:0.75 alpha:1.0];
+        pink = [UIColor colorWithRed:1.0 green:0.45 blue:0.80 alpha:1.0];
+        orange = [UIColor colorWithRed:1.0 green:0.75 blue:0.30 alpha:1.0];
+        purple = [UIColor colorWithRed:0.68 green:0.55 blue:1.0 alpha:1.0];
+    } else if (_preset == FPSOverlayPresetPerformance) {
+        cyan = [UIColor colorWithRed:0.30 green:0.88 blue:1.0 alpha:1.0];
+        green = [UIColor colorWithRed:0.30 green:0.98 blue:0.50 alpha:1.0];
+    }
+
     [styled addAttribute:NSForegroundColorAttributeName value:white range:NSMakeRange(0, [plain length])];
 
     NSRange r;
@@ -994,4 +1005,3 @@ static void FPSOverlayInit(void)
         }];
     });
 }
-
