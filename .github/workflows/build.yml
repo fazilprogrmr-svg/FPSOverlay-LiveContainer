@@ -13,7 +13,7 @@ jobs:
 
     steps:
 
-      # 1. Download your GitHub repository
+      # 1. Checkout repository
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -41,7 +41,7 @@ jobs:
           make FINALPACKAGE=1
 
 
-      # 4. Check that the dylib was created correctly
+      # 4. Verify dylib
       - name: Verify Build
         run: |
           set -e
@@ -54,6 +54,7 @@ jobs:
 
           test -f "$D"
 
+          echo ""
           echo "File information:"
           file "$D"
 
@@ -70,7 +71,7 @@ jobs:
           ls -lh "$D"
 
 
-      # 5. Download ZSign source
+      # 5. Download ZSign
       - name: Install ZSign
         run: |
           set -e
@@ -127,14 +128,14 @@ jobs:
 
             echo ""
             echo "Files inside ZSign:"
-            find . -maxdepth 4 -type f -print
+            find . -maxdepth 4 -type f
 
             exit 1
 
           fi
 
 
-      # 7. Find the ZSign executable
+      # 7. Locate ZSign
       - name: Locate ZSign
         id: locate_zsign
         run: |
@@ -146,7 +147,6 @@ jobs:
 
           ZSIGN_PATH=""
 
-          # This is the location found in your previous build
           if [ -f "./zsign/bin/zsign" ]; then
 
             ZSIGN_PATH="./zsign/bin/zsign"
@@ -199,7 +199,7 @@ jobs:
           echo "ZSIGN_PATH=$ZSIGN_PATH" >> "$GITHUB_ENV"
 
 
-      # 8. Sign FPSOverlay.dylib
+      # 8. Sign FPSOverlay
       - name: Sign FPSOverlay
         run: |
           set -e
@@ -230,7 +230,7 @@ jobs:
           echo "Signing completed."
 
 
-      # 9. Verify the signature
+      # 9. Verify signature
       - name: Verify Signature
         run: |
           set -e
@@ -266,7 +266,7 @@ jobs:
           ls -lh "$D"
 
 
-      # 10. Prepare GitHub Release
+      # 10. Prepare release
       - name: Prepare Release
         run: |
           set -e
@@ -290,42 +290,131 @@ jobs:
           ls -lh "release/FPSOverlay.dylib"
 
 
-      # 11. Create GitHub Release automatically
+      # 11. Create GitHub Release
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
 
         with:
 
-          tag_name: "v1.0.${{ github.run_number }}"
+          tag_name: "v2.0.${{ github.run_number }}"
 
-          name: "FPSOverlay v1.0.${{ github.run_number }}"
+          name: "FPSOverlay v2.0.${{ github.run_number }}"
 
           body: |
-            # FPSOverlay
+            # FPSOverlay v2
 
-            iOS game performance overlay for LiveContainer.
+            A lightweight iOS game performance overlay for games running through LiveContainer.
 
-            Features:
+            ## What's New
 
-            - FPS
-            - Average FPS
-            - 1% Low
-            - 0.1% Low
-            - Frame time
-            - Minimum FPS
-            - Maximum FPS
-            - Refresh rate
+            ### New Theme System
+
+            Added 10 distinct HUD themes with their own visual identity:
+
+            - iPhone Liquid Glass
+            - PlayStation
+            - Xbox
+            - Windows Fluent
+            - Steam Deck
+            - Cyber Neon
+            - ROG Gaming
+            - Minimal
+            - MangoHUD
+            - Nintendo
+
+            The themes are designed as separate visual styles rather than simply changing the HUD accent color.
+
+            ### iPhone Liquid Glass
+
+            - Native `UIGlassEffect` support when available
+            - Transparent glass surface
+            - No forced dark mode
+            - No artificial black background
+            - No artificial white background
+            - No fake colored glass tint
+            - Transparent fallback when native Liquid Glass is unavailable
+
+            ### New Display Modes
+
+            - Full Performance
+            - Text Only
+            - FPS Only
+
+            Text Only removes the HUD panel completely and displays performance information directly over the game.
+
+            FPS Only displays only the current FPS value.
+
+            ### New Overlay Layouts
+
+            - Horizontal
+            - Vertical
+
+            Horizontal keeps the compact one-line HUD.
+
+            Vertical arranges the performance metrics into a compact stacked layout.
+
+            ### Performance Monitoring
+
+            - Real rendered FPS measurement
+            - Metal drawable presentation based FPS tracking
+            - Frame Time
+            - CPU usage
+            - CPU/device information
+            - GPU/device information
             - RAM usage
-            - Device information
-            - GPU information
-            - Battery level
+            - Total RAM
+            - Battery percentage
+            - Display refresh rate
+            - Thermal state
             - Live FPS graph
 
-            The release contains:
+            FPS and Frame Time are based on actual Metal presentation events instead of simply counting display refresh callbacks.
 
-            FPSOverlay.dylib
+            ### HUD Improvements
 
-            The dylib is automatically built and signed with ZSign by GitHub Actions.
+            - Game icon support
+            - Adaptive HUD sizing
+            - Compact mode
+            - Theme indicator
+            - Saved theme selection
+            - Saved layout selection
+            - Saved display mode
+            - Saved HUD position
+            - Draggable HUD
+            - Improved readability
+            - Theme-specific decorations and accents
+
+            ### Gesture Controls
+
+            - Double tap: Toggle compact mode
+            - Triple tap: Hide/show overlay
+            - Long press: Change theme
+            - Two-finger tap: Switch Horizontal/Vertical layout
+            - Two-finger double tap: Switch display mode
+
+            ## Installation
+
+            1. Download `FPSOverlay.dylib`.
+            2. Create or use an `FPS` folder in LiveContainer.
+            3. Place `FPSOverlay.dylib` inside the folder.
+            4. Open the game's settings.
+            5. Select `FPS` as the Tweak Folder.
+            6. Enable Tweak Loading.
+            7. Launch the game.
+
+            ## Build
+
+            The dylib is automatically:
+
+            - Built with Theos
+            - Verified as ARM64
+            - Signed with ZSign
+            - Signature checked
+            - Attached automatically to this GitHub Release
+
+            ## File
+
+            `FPSOverlay.dylib`
 
           files: release/FPSOverlay.dylib
 
