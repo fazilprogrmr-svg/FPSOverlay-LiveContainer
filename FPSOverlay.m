@@ -84,7 +84,8 @@ static void FPSOverlayInstallMetalFrameHook(void)
 {
     UIView *_gestureOverlay;
     UILabel *_label;
-    UIView *_containerView;
+    UIView *_glassContainer;
+    UIVisualEffectView *_blurView;
     UIWindow *_hostWindow;
 
     CADisplayLink *_displayLink;
@@ -170,7 +171,7 @@ static void FPSOverlayInstallMetalFrameHook(void)
     [_cpuTimer invalidate];
     [_displayLink invalidate];
     [_label removeFromSuperview];
-    [_containerView removeFromSuperview];
+    [_glassContainer removeFromSuperview];
     [_gestureOverlay removeFromSuperview];
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     [super dealloc];
@@ -194,25 +195,26 @@ static void FPSOverlayInstallMetalFrameHook(void)
     switch (preset) {
         case FPSOverlayPresetMinimal:
             _compactMode = YES;
-            _hudOpacity = 0.18;
+            _hudOpacity = 0.12;
             break;
         case FPSOverlayPresetNeon:
             _compactMode = NO;
-            _hudOpacity = 0.35;
+            _hudOpacity = 0.20;
             break;
         case FPSOverlayPresetPerformance:
             _compactMode = NO;
-            _hudOpacity = 0.42;
+            _hudOpacity = 0.25;
             break;
         case FPSOverlayPresetDefault:
         default:
             _compactMode = NO;
-            _hudOpacity = 0.28;
+            _hudOpacity = 0.15;
             break;
     }
 
     [self savePreferences];
     [self updateLabel];
+    [self animatePresetTransition];
 }
 
 - (void)cyclePreset
@@ -229,12 +231,25 @@ static void FPSOverlayInstallMetalFrameHook(void)
     [defaults setBool:_compactMode forKey:@"FPSOverlay_CompactMode"];
     [defaults setBool:_hidden forKey:@"FPSOverlay_Hidden"];
 
-    if (_containerView && _hostWindow) {
-        [defaults setFloat:_containerView.frame.origin.x forKey:@"FPSOverlay_LabelOriginX"];
-        [defaults setFloat:_containerView.frame.origin.y forKey:@"FPSOverlay_LabelOriginY"];
+    if (_glassContainer && _hostWindow) {
+        [defaults setFloat:_glassContainer.frame.origin.x forKey:@"FPSOverlay_LabelOriginX"];
+        [defaults setFloat:_glassContainer.frame.origin.y forKey:@"FPSOverlay_LabelOriginY"];
     }
 
     [defaults synchronize];
+}
+
+- (void)animatePresetTransition
+{
+    if (!_glassContainer) return;
+    
+    [UIView animateWithDuration:0.2 animations:^{
+        self->_glassContainer.transform = CGAffineTransformMakeScale(1.05, 1.05);
+    } completion:^(BOOL finished) {
+        [UIView animateWithDuration:0.15 animations:^{
+            self->_glassContainer.transform = CGAffineTransformIdentity;
+        }];
+    }];
 }
 
 - (void)showPresetIndicator
@@ -244,30 +259,35 @@ static void FPSOverlayInstallMetalFrameHook(void)
     UILabel *indicator = [[UILabel alloc] init];
     indicator.text = [NSString stringWithFormat:@"⚙ %@", presetName];
     indicator.textColor = [UIColor colorWithWhite:1.0 alpha:1.0];
-    indicator.font = [UIFont systemFontOfSize:12.0 weight:UIFontWeightSemibold];
-    indicator.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.6];
-    indicator.layer.cornerRadius = 6.0;
+    indicator.font = [UIFont systemFontOfSize:13.0 weight:UIFontWeightSemibold];
+    indicator.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.55];
+    indicator.layer.cornerRadius = 8.0;
     indicator.layer.masksToBounds = YES;
     [indicator sizeToFit];
     
     CGRect frame = indicator.frame;
-    frame.size.width += 12.0;
-    frame.size.height += 8.0;
+    frame.size.width += 16.0;
+    frame.size.height += 10.0;
     indicator.frame = frame;
     
     if (_hostWindow) {
-        indicator.center = CGPointMake(_hostWindow.bounds.size.width / 2.0, _hostWindow.bounds.size.height / 2.0 - 80.0);
+        indicator.center = CGPointMake(_hostWindow.bounds.size.width / 2.0, _hostWindow.bounds.size.height / 2.0 - 100.0);
+        indicator.alpha = 0.0;
         [_hostWindow addSubview:indicator];
         
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1200 * NSEC_PER_MSEC),
-                       dispatch_get_main_queue(), ^{
-            [UIView animateWithDuration:0.3 animations:^{
-                indicator.alpha = 0.0;
-            } completion:^(BOOL finished) {
-                [indicator removeFromSuperview];
-                [indicator release];
-            }];
-        });
+        [UIView animateWithDuration:0.2 animations:^{
+            indicator.alpha = 1.0;
+        } completion:^(BOOL finished) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1000 * NSEC_PER_MSEC),
+                           dispatch_get_main_queue(), ^{
+                [UIView animateWithDuration:0.3 animations:^{
+                    indicator.alpha = 0.0;
+                } completion:^(BOOL finished2) {
+                    [indicator removeFromSuperview];
+                    [indicator release];
+                }];
+            });
+        }];
     } else {
         [indicator release];
     }
@@ -275,10 +295,10 @@ static void FPSOverlayInstallMetalFrameHook(void)
 
 - (void)handlePan:(UIPanGestureRecognizer *)panGesture
 {
-    if (!_hostWindow || !_containerView || _hidden) return;
+    if (!_hostWindow || !_glassContainer || _hidden) return;
 
     CGPoint translation = [panGesture translationInView:_hostWindow];
-    CGRect frame = _containerView.frame;
+    CGRect frame = _glassContainer.frame;
     frame.origin.x += translation.x;
     frame.origin.y += translation.y;
 
@@ -292,8 +312,8 @@ static void FPSOverlayInstallMetalFrameHook(void)
     if (frame.origin.y < minY) frame.origin.y = minY;
     if (frame.origin.y > maxY) frame.origin.y = maxY;
 
-    _containerView.frame = frame;
-    _gestureOverlay.frame = _containerView.bounds;
+    _glassContainer.frame = frame;
+    _gestureOverlay.frame = _glassContainer.bounds;
     [panGesture setTranslation:CGPointZero inView:_hostWindow];
 
     if (panGesture.state == UIGestureRecognizerStateEnded ||
@@ -308,16 +328,27 @@ static void FPSOverlayInstallMetalFrameHook(void)
     _compactMode = !_compactMode;
     [self savePreferences];
     [self updateLabel];
+    [self animatePresetTransition];
 }
 
 - (void)toggleVisibility
 {
     _hidden = !_hidden;
     [self savePreferences];
-    if (_containerView) {
-        _containerView.hidden = _hidden;
-        _containerView.alpha = _hidden ? 0.0 : 1.0;
-    }
+    
+    if (!_glassContainer) return;
+    
+    [UIView animateWithDuration:0.25 animations:^{
+        if (self->_hidden) {
+            self->_glassContainer.alpha = 0.0;
+            self->_glassContainer.transform = CGAffineTransformMakeScale(0.9, 0.9);
+        } else {
+            self->_glassContainer.alpha = 1.0;
+            self->_glassContainer.transform = CGAffineTransformIdentity;
+        }
+    } completion:^(BOOL finished) {
+        self->_glassContainer.hidden = self->_hidden;
+    }];
 }
 
 - (void)handleDoubleTap:(UITapGestureRecognizer *)tapGesture
@@ -340,17 +371,17 @@ static void FPSOverlayInstallMetalFrameHook(void)
 
 - (void)positionLabelForWindow:(UIWindow *)window
 {
-    if (!_label || !_containerView || !window) return;
+    if (!_label || !_glassContainer || !window) return;
 
     [_label sizeToFit];
 
     CGFloat pad = 8.0;
     CGFloat maxWidth = window.bounds.size.width - (pad * 2.0);
-    CGFloat width = _label.bounds.size.width + 24.0;
+    CGFloat width = _label.bounds.size.width + 28.0;
     if (width > maxWidth) width = maxWidth;
 
-    CGFloat height = 36.0;
-    CGRect frame = _containerView.frame;
+    CGFloat height = 38.0;
+    CGRect frame = _glassContainer.frame;
     frame.size.width = width;
     frame.size.height = height;
 
@@ -361,9 +392,10 @@ static void FPSOverlayInstallMetalFrameHook(void)
         frame.origin.y = 20.0;
     }
 
-    _containerView.frame = frame;
-    _gestureOverlay.frame = _containerView.bounds;
-    _label.frame = CGRectMake(8.0, 6.0, frame.size.width - 16.0, frame.size.height - 12.0);
+    _glassContainer.frame = frame;
+    _gestureOverlay.frame = _glassContainer.bounds;
+    _blurView.frame = _glassContainer.bounds;
+    _label.frame = CGRectMake(10.0, 8.0, frame.size.width - 20.0, frame.size.height - 16.0);
 }
 
 #pragma mark - Device
@@ -637,7 +669,7 @@ static void FPSOverlayInstallMetalFrameHook(void)
     return graph;
 }
 
-#pragma mark - UI - iPhone Liquid Glass Design (Phase 7-8)
+#pragma mark - UI - Phase 9: True Transparent Liquid Glass
 
 - (UIView *)makeLiquidGlassContainer
 {
@@ -645,27 +677,26 @@ static void FPSOverlayInstallMetalFrameHook(void)
     container.backgroundColor = [UIColor clearColor];
     container.layer.masksToBounds = YES;
     
-    /* iPhone-style liquid glass: 12pt continuous rounded corners */
-    container.layer.cornerRadius = 12.0;
+    /* 14pt continuous rounded corners for premium iPhone look */
+    container.layer.cornerRadius = 14.0;
     if (@available(iOS 13.0, *)) {
         container.layer.cornerCurve = kCACornerCurveContinuous;
     }
     
-    /* Premium blur effect: .systemThickMaterial for depth */
+    /* Premium blur effect with ultra-low opacity for true glass transparency */
     UIBlurEffect *blurEffect;
     if (@available(iOS 13.0, *)) {
-        blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThickMaterial];
+        blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemMaterial];
     } else {
-        blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleDark];
+        blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleLight];
     }
     
-    UIVisualEffectView *blurView = [[UIVisualEffectView alloc] initWithEffect:blurEffect];
-    blurView.frame = container.bounds;
-    blurView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    [container addSubview:blurView];
-    [blurView release];
+    _blurView = [[UIVisualEffectView alloc] initWithEffect:blurEffect];
+    _blurView.frame = container.bounds;
+    _blurView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [container addSubview:_blurView];
     
-    /* Vibrancy layer for liquid glass effect */
+    /* Minimal vibrancy for glass effect (ultra-transparent) */
     UIVibrancyEffect *vibrancyEffect;
     if (@available(iOS 13.0, *)) {
         vibrancyEffect = [UIVibrancyEffect effectForBlurEffect:blurEffect style:UIVibrancyEffectStyleLabel];
@@ -679,23 +710,23 @@ static void FPSOverlayInstallMetalFrameHook(void)
     [container addSubview:vibrancyView];
     [vibrancyView release];
     
-    /* Semi-transparent glass tint overlay */
+    /* Ultra-light tint overlay (almost transparent) */
     UIView *glassOverlay = [[UIView alloc] init];
-    glassOverlay.backgroundColor = [UIColor colorWithWhite:0.15 alpha:_hudOpacity * 0.25];
+    glassOverlay.backgroundColor = [UIColor colorWithWhite:0.05 alpha:_hudOpacity * 0.08];
     glassOverlay.frame = container.bounds;
     glassOverlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     [container addSubview:glassOverlay];
     [glassOverlay release];
     
-    /* Subtle 1pt border for glass definition */
-    container.layer.borderWidth = 1.0;
-    container.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.18].CGColor;
+    /* Subtle 0.5pt border for glass edge definition */
+    container.layer.borderWidth = 0.5;
+    container.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.12].CGColor;
     
-    /* Soft depth shadow */
+    /* Very soft shadow for minimal depth */
     container.layer.shadowColor = UIColor.blackColor.CGColor;
-    container.layer.shadowOpacity = 0.15;
-    container.layer.shadowOffset = CGSizeMake(0, 4);
-    container.layer.shadowRadius = 8.0;
+    container.layer.shadowOpacity = 0.08;
+    container.layer.shadowOffset = CGSizeMake(0, 2);
+    container.layer.shadowRadius = 4.0;
     
     return container;
 }
@@ -726,58 +757,63 @@ static void FPSOverlayInstallMetalFrameHook(void)
 - (void)createOverlayOnWindow:(UIWindow *)window
 {
     [_label removeFromSuperview];
-    [_containerView removeFromSuperview];
+    [_glassContainer removeFromSuperview];
     [_gestureOverlay removeFromSuperview];
     [_label release];
-    [_containerView release];
+    [_glassContainer release];
     [_gestureOverlay release];
     _label = nil;
-    _containerView = nil;
+    _glassContainer = nil;
     _gestureOverlay = nil;
+    _blurView = nil;
 
     _hostWindow = window;
     
-    /* Create liquid glass container */
-    _containerView = [self makeLiquidGlassContainer];
-    _containerView.hidden = _hidden;
-    _containerView.alpha = _hidden ? 0.0 : 1.0;
+    /* Create true transparent liquid glass container */
+    _glassContainer = [self makeLiquidGlassContainer];
+    _glassContainer.hidden = _hidden;
+    _glassContainer.alpha = _hidden ? 0.0 : 1.0;
     
     /* Create label inside container */
     _label = [self makeLabel];
     _label.font = [UIFont monospacedDigitSystemFontOfSize:[self fontSizeForWindow:window] weight:UIFontWeightSemibold];
-    [_containerView addSubview:_label];
+    [_glassContainer addSubview:_label];
     
-    /* Create transparent gesture overlay (on top, no background) */
+    /* Create transparent gesture capture overlay */
     _gestureOverlay = [[UIView alloc] init];
     _gestureOverlay.backgroundColor = [UIColor clearColor];
     _gestureOverlay.userInteractionEnabled = YES;
-    [_containerView addSubview:_gestureOverlay];
+    [_glassContainer addSubview:_gestureOverlay];
 
-    /* Gestures on gesture overlay (allows all gestures to pass through) */
+    /* Attach all gestures to overlay */
     UIPanGestureRecognizer *panGesture = [[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)] autorelease];
     UITapGestureRecognizer *doubleTapGesture = [[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleDoubleTap:)] autorelease];
     UITapGestureRecognizer *tripleTapGesture = [[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTripleTap:)] autorelease];
     UILongPressGestureRecognizer *longPressGesture = [[[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleLongPress:)] autorelease];
+    
     doubleTapGesture.numberOfTapsRequired = 2;
     doubleTapGesture.numberOfTouchesRequired = 1;
     tripleTapGesture.numberOfTapsRequired = 3;
     tripleTapGesture.numberOfTouchesRequired = 1;
     longPressGesture.minimumPressDuration = 0.6;
+    
     [tripleTapGesture requireGestureRecognizerToFail:doubleTapGesture];
+    [doubleTapGesture requireGestureRecognizerToFail:longPressGesture];
+    
     [_gestureOverlay addGestureRecognizer:panGesture];
     [_gestureOverlay addGestureRecognizer:doubleTapGesture];
     [_gestureOverlay addGestureRecognizer:tripleTapGesture];
     [_gestureOverlay addGestureRecognizer:longPressGesture];
 
-    [window addSubview:_containerView];
+    [window addSubview:_glassContainer];
 
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     CGFloat x = [defaults floatForKey:@"FPSOverlay_LabelOriginX"];
     CGFloat y = [defaults floatForKey:@"FPSOverlay_LabelOriginY"];
     if (x <= 0.0 || x > window.bounds.size.width - 80.0) x = 12.0;
-    if (y <= 0.0 || y > window.bounds.size.height - 36.0) y = 20.0;
-    _containerView.frame = CGRectMake(x, y, 280.0, 36.0);
-    _gestureOverlay.frame = _containerView.bounds;
+    if (y <= 0.0 || y > window.bounds.size.height - 38.0) y = 20.0;
+    _glassContainer.frame = CGRectMake(x, y, 300.0, 38.0);
+    _gestureOverlay.frame = _glassContainer.bounds;
 
     [self updateLabel];
 }
@@ -822,8 +858,8 @@ static void FPSOverlayInstallMetalFrameHook(void)
     if (!_label) return;
 
     if (_hidden) {
-        _containerView.hidden = YES;
-        _containerView.alpha = 0.0;
+        _glassContainer.hidden = YES;
+        _glassContainer.alpha = 0.0;
         return;
     }
 
@@ -831,8 +867,8 @@ static void FPSOverlayInstallMetalFrameHook(void)
         _label.font = [UIFont monospacedDigitSystemFontOfSize:[self fontSizeForWindow:_hostWindow] weight:UIFontWeightSemibold];
     }
 
-    _containerView.hidden = NO;
-    _containerView.alpha = 1.0;
+    _glassContainer.hidden = NO;
+    _glassContainer.alpha = 1.0;
 
     double fps = _measuredFPS;
     if (fps <= 0.0 && _historyCount > 0) fps = _fpsHistory[_historyCount - 1];
@@ -867,29 +903,29 @@ static void FPSOverlayInstallMetalFrameHook(void)
                  fps, cpuText, ramText, battery, frameTime, graph];
     } else {
         plain = [NSString stringWithFormat:
-            @"FPS %.0f | %@ | %@ | RAM %@ | BATT %@ | FT %.1fms | HZ %.0f | Thermal State: %@ | %@",
+            @"FPS %.0f | %@ | %@ | RAM %@ | BATT %@ | FT %.1fms | HZ %.0f | Thermal: %@ | %@",
             fps, cpuText, gpuText, ramText, battery, frameTime, hz, thermal, graph];
     }
 
     NSMutableAttributedString *styled =
         [[[NSMutableAttributedString alloc] initWithString:plain] autorelease];
 
-    UIColor *white = [UIColor colorWithWhite:0.98 alpha:1.0];
-    UIColor *cyan = [UIColor colorWithRed:0.25 green:0.85 blue:1.0 alpha:1.0];
-    UIColor *green = [UIColor colorWithRed:0.35 green:1.0 blue:0.55 alpha:1.0];
-    UIColor *pink = [UIColor colorWithRed:1.0 green:0.35 blue:0.65 alpha:1.0];
-    UIColor *orange = [UIColor colorWithRed:1.0 green:0.70 blue:0.25 alpha:1.0];
-    UIColor *purple = [UIColor colorWithRed:0.75 green:0.55 blue:1.0 alpha:1.0];
+    UIColor *white = [UIColor colorWithWhite:0.99 alpha:1.0];
+    UIColor *cyan = [UIColor colorWithRed:0.2 green:0.85 blue:1.0 alpha:1.0];
+    UIColor *green = [UIColor colorWithRed:0.3 green:1.0 blue:0.5 alpha:1.0];
+    UIColor *pink = [UIColor colorWithRed:1.0 green:0.3 blue:0.65 alpha:1.0];
+    UIColor *orange = [UIColor colorWithRed:1.0 green:0.7 blue:0.2 alpha:1.0];
+    UIColor *purple = [UIColor colorWithRed:0.7 green:0.5 blue:1.0 alpha:1.0];
 
     if (_preset == FPSOverlayPresetNeon) {
-        cyan = [UIColor colorWithRed:0.18 green:0.98 blue:1.0 alpha:1.0];
-        green = [UIColor colorWithRed:0.25 green:1.0 blue:0.75 alpha:1.0];
-        pink = [UIColor colorWithRed:1.0 green:0.45 blue:0.80 alpha:1.0];
-        orange = [UIColor colorWithRed:1.0 green:0.75 blue:0.30 alpha:1.0];
-        purple = [UIColor colorWithRed:0.68 green:0.55 blue:1.0 alpha:1.0];
+        cyan = [UIColor colorWithRed:0.1 green:0.95 blue:1.0 alpha:1.0];
+        green = [UIColor colorWithRed:0.2 green:1.0 blue:0.7 alpha:1.0];
+        pink = [UIColor colorWithRed:1.0 green:0.4 blue:0.8 alpha:1.0];
+        orange = [UIColor colorWithRed:1.0 green:0.8 blue:0.2 alpha:1.0];
+        purple = [UIColor colorWithRed:0.65 green:0.5 blue:1.0 alpha:1.0];
     } else if (_preset == FPSOverlayPresetPerformance) {
-        cyan = [UIColor colorWithRed:0.30 green:0.88 blue:1.0 alpha:1.0];
-        green = [UIColor colorWithRed:0.30 green:0.98 blue:0.50 alpha:1.0];
+        cyan = [UIColor colorWithRed:0.25 green:0.9 blue:1.0 alpha:1.0];
+        green = [UIColor colorWithRed:0.35 green:1.0 blue:0.55 alpha:1.0];
     }
 
     [styled addAttribute:NSForegroundColorAttributeName value:white range:NSMakeRange(0, [plain length])];
@@ -902,7 +938,7 @@ static void FPSOverlayInstallMetalFrameHook(void)
     r = [plain rangeOfString:@"BATT"]; if (r.location != NSNotFound) [styled addAttribute:NSForegroundColorAttributeName value:pink range:r];
     r = [plain rangeOfString:@"FT"]; if (r.location != NSNotFound) [styled addAttribute:NSForegroundColorAttributeName value:orange range:r];
     r = [plain rangeOfString:@"HZ"]; if (r.location != NSNotFound) [styled addAttribute:NSForegroundColorAttributeName value:purple range:r];
-    r = [plain rangeOfString:@"Thermal State:"]; if (r.location != NSNotFound) [styled addAttribute:NSForegroundColorAttributeName value:orange range:r];
+    r = [plain rangeOfString:@"Thermal:"]; if (r.location != NSNotFound) [styled addAttribute:NSForegroundColorAttributeName value:orange range:r];
     r = [plain rangeOfString:graph options:NSBackwardsSearch range:NSMakeRange(0, [plain length])];
     if (r.location != NSNotFound) [styled addAttribute:NSForegroundColorAttributeName value:green range:r];
 
@@ -981,12 +1017,12 @@ static void FPSOverlayInstallMetalFrameHook(void)
     UIWindow *window = [self findGameWindow];
     if (!window) return;
 
-    if (_hostWindow != window || _containerView.superview != window) {
+    if (_hostWindow != window || _glassContainer.superview != window) {
         [self createOverlayOnWindow:window];
     } else {
-        _containerView.hidden = _hidden;
-        _containerView.alpha = _hidden ? 0.0 : 1.0;
-        [window bringSubviewToFront:_containerView];
+        _glassContainer.hidden = _hidden;
+        _glassContainer.alpha = _hidden ? 0.0 : 1.0;
+        [window bringSubviewToFront:_glassContainer];
         _label.font = [UIFont monospacedDigitSystemFontOfSize:[self fontSizeForWindow:window] weight:UIFontWeightSemibold];
     }
 
