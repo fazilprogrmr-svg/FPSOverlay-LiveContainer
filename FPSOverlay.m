@@ -697,18 +697,53 @@ static void FPSOverlayInstallMetalFrameHook(void)
      * visible and avoids the large white panel produced by SystemMaterial.
      * Older iOS versions fall back to a dark blur.
      */
-    if (@available(iOS 26.0, *)) {
-        UIGlassEffect *glassEffect = [UIGlassEffect effectWithStyle:UIGlassEffectStyleClear];
-        glassEffect.tintColor = [UIColor colorWithWhite:0.0 alpha:0.16];
-        glassEffect.interactive = NO;
+    /*
+     * The GitHub Actions runner may build against a UIKit SDK that predates
+     * the iOS 26 UIGlassEffect headers. Do not reference UIGlassEffect or
+     * UIGlassEffectStyle at compile time. Resolve the class and selector at
+     * runtime instead. This keeps the dylib buildable with older Theos SDKs
+     * while still using Apple's native Liquid Glass on iOS 26+.
+     *
+     * UIGlassEffectStyleClear is the second enum case (Regular = 0,
+     * Clear = 1).
+     */
+    Class glassClass = NSClassFromString(@"UIGlassEffect");
+    if (glassClass) {
+        SEL effectSEL = NSSelectorFromString(@"effectWithStyle:");
+        if ([glassClass respondsToSelector:effectSEL]) {
+            typedef id (*FPSGlassEffectWithStyleIMP)(id, SEL, NSInteger);
+            FPSGlassEffectWithStyleIMP makeGlass =
+                (FPSGlassEffectWithStyleIMP)objc_msgSend;
+            id glassEffect = makeGlass(glassClass, effectSEL, (NSInteger)1);
 
-        _blurView = [[UIVisualEffectView alloc] initWithEffect:glassEffect];
-    } else if (@available(iOS 13.0, *)) {
-        UIBlurEffect *blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemMaterialDark];
-        _blurView = [[UIVisualEffectView alloc] initWithEffect:blurEffect];
-    } else {
-        _blurView = [[UIVisualEffectView alloc] initWithEffect:nil];
-        _blurView.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.30];
+            if (glassEffect) {
+                SEL setTintSEL = NSSelectorFromString(@"setTintColor:");
+                if ([glassEffect respondsToSelector:setTintSEL]) {
+                    typedef void (*FPSEffectColorIMP)(id, SEL, UIColor *);
+                    ((FPSEffectColorIMP)objc_msgSend)(
+                        glassEffect, setTintSEL,
+                        [UIColor colorWithWhite:0.0 alpha:0.16]);
+                }
+
+                SEL setInteractiveSEL = NSSelectorFromString(@"setInteractive:");
+                if ([glassEffect respondsToSelector:setInteractiveSEL]) {
+                    typedef void (*FPSEffectBoolIMP)(id, SEL, BOOL);
+                    ((FPSEffectBoolIMP)objc_msgSend)(glassEffect, setInteractiveSEL, NO);
+                }
+
+                _blurView = [[UIVisualEffectView alloc] initWithEffect:(UIVisualEffect *)glassEffect];
+            }
+        }
+    }
+
+    if (!_blurView) {
+        if (@available(iOS 13.0, *)) {
+            UIBlurEffect *blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemMaterialDark];
+            _blurView = [[UIVisualEffectView alloc] initWithEffect:blurEffect];
+        } else {
+            _blurView = [[UIVisualEffectView alloc] initWithEffect:nil];
+            _blurView.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.30];
+        }
     }
 
     _blurView.frame = container.bounds;
