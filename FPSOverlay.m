@@ -83,6 +83,7 @@ static void FPSOverlayInstallMetalFrameHook(void)
 @interface FPSOverlayController : NSObject
 {
     UIView *_gestureOverlay;
+    UIView *_hiddenGestureOverlay;
     UILabel *_label;
     UIView *_glassContainer;
     UIVisualEffectView *_blurView;
@@ -173,6 +174,8 @@ static void FPSOverlayInstallMetalFrameHook(void)
     [_label removeFromSuperview];
     [_glassContainer removeFromSuperview];
     [_gestureOverlay removeFromSuperview];
+    [_hiddenGestureOverlay removeFromSuperview];
+    [_hiddenGestureOverlay release];
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     [super dealloc];
 }
@@ -314,6 +317,7 @@ static void FPSOverlayInstallMetalFrameHook(void)
 
     _glassContainer.frame = frame;
     _gestureOverlay.frame = _glassContainer.bounds;
+    _hiddenGestureOverlay.frame = frame;
     [panGesture setTranslation:CGPointZero inView:_hostWindow];
 
     if (panGesture.state == UIGestureRecognizerStateEnded ||
@@ -347,7 +351,10 @@ static void FPSOverlayInstallMetalFrameHook(void)
             self->_glassContainer.transform = CGAffineTransformIdentity;
         }
     } completion:^(BOOL finished) {
-        self->_glassContainer.hidden = self->_hidden;
+        /* Keep glassContainer unhidden so its layout remains valid. */
+        self->_glassContainer.hidden = NO;
+        self->_hiddenGestureOverlay.hidden = !self->_hidden;
+        self->_hiddenGestureOverlay.frame = self->_glassContainer.frame;
     }];
 }
 
@@ -394,6 +401,7 @@ static void FPSOverlayInstallMetalFrameHook(void)
 
     _glassContainer.frame = frame;
     _gestureOverlay.frame = _glassContainer.bounds;
+    _hiddenGestureOverlay.frame = frame;
     _blurView.frame = _glassContainer.bounds;
     _label.frame = CGRectMake(10.0, 8.0, frame.size.width - 20.0, frame.size.height - 16.0);
 }
@@ -671,63 +679,51 @@ static void FPSOverlayInstallMetalFrameHook(void)
 
 #pragma mark - UI - Phase 9: True Transparent Liquid Glass
 
+#pragma mark - UI - Phase 9: Native Liquid Glass
+
 - (UIView *)makeLiquidGlassContainer
 {
     UIView *container = [[UIView alloc] init];
     container.backgroundColor = [UIColor clearColor];
     container.layer.masksToBounds = YES;
-    
-    /* 14pt continuous rounded corners for premium iPhone look */
-    container.layer.cornerRadius = 14.0;
+    container.layer.cornerRadius = 11.0;
     if (@available(iOS 13.0, *)) {
         container.layer.cornerCurve = kCACornerCurveContinuous;
     }
-    
-    /* Premium blur effect with ultra-low opacity for true glass transparency */
-    UIBlurEffect *blurEffect;
-    if (@available(iOS 13.0, *)) {
-        blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemMaterial];
+
+    /*
+     * iOS 26+: use Apple's native Liquid Glass effect instead of the old
+     * UIBlurEffect/SystemMaterial approximation. Clear glass keeps the game
+     * visible and avoids the large white panel produced by SystemMaterial.
+     * Older iOS versions fall back to a dark blur.
+     */
+    if (@available(iOS 26.0, *)) {
+        UIGlassEffect *glassEffect = [UIGlassEffect effectWithStyle:UIGlassEffectStyleClear];
+        glassEffect.tintColor = [UIColor colorWithWhite:0.0 alpha:0.16];
+        glassEffect.interactive = NO;
+
+        _blurView = [[UIVisualEffectView alloc] initWithEffect:glassEffect];
+    } else if (@available(iOS 13.0, *)) {
+        UIBlurEffect *blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemMaterialDark];
+        _blurView = [[UIVisualEffectView alloc] initWithEffect:blurEffect];
     } else {
-        blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleLight];
+        _blurView = [[UIVisualEffectView alloc] initWithEffect:nil];
+        _blurView.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.30];
     }
-    
-    _blurView = [[UIVisualEffectView alloc] initWithEffect:blurEffect];
+
     _blurView.frame = container.bounds;
     _blurView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     [container addSubview:_blurView];
-    
-    /* Minimal vibrancy for glass effect (ultra-transparent) */
-    UIVibrancyEffect *vibrancyEffect;
-    if (@available(iOS 13.0, *)) {
-        vibrancyEffect = [UIVibrancyEffect effectForBlurEffect:blurEffect style:UIVibrancyEffectStyleLabel];
-    } else {
-        vibrancyEffect = [UIVibrancyEffect effectForBlurEffect:blurEffect];
-    }
-    
-    UIVisualEffectView *vibrancyView = [[UIVisualEffectView alloc] initWithEffect:vibrancyEffect];
-    vibrancyView.frame = container.bounds;
-    vibrancyView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    [container addSubview:vibrancyView];
-    [vibrancyView release];
-    
-    /* Ultra-light tint overlay (almost transparent) */
-    UIView *glassOverlay = [[UIView alloc] init];
-    glassOverlay.backgroundColor = [UIColor colorWithWhite:0.05 alpha:_hudOpacity * 0.08];
-    glassOverlay.frame = container.bounds;
-    glassOverlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    [container addSubview:glassOverlay];
-    [glassOverlay release];
-    
-    /* Subtle 0.5pt border for glass edge definition */
+
+    /* Very subtle edge definition; native glass provides the main depth. */
     container.layer.borderWidth = 0.5;
-    container.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.12].CGColor;
-    
-    /* Very soft shadow for minimal depth */
+    container.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.16].CGColor;
+
     container.layer.shadowColor = UIColor.blackColor.CGColor;
-    container.layer.shadowOpacity = 0.08;
+    container.layer.shadowOpacity = 0.10;
     container.layer.shadowOffset = CGSizeMake(0, 2);
-    container.layer.shadowRadius = 4.0;
-    
+    container.layer.shadowRadius = 5.0;
+
     return container;
 }
 
@@ -771,7 +767,9 @@ static void FPSOverlayInstallMetalFrameHook(void)
     
     /* Create true transparent liquid glass container */
     _glassContainer = [self makeLiquidGlassContainer];
-    _glassContainer.hidden = _hidden;
+    /* Keep the glass view itself non-hidden; when HUD is hidden, a small
+       transparent gesture proxy remains available to receive triple-taps. */
+    _glassContainer.hidden = NO;
     _glassContainer.alpha = _hidden ? 0.0 : 1.0;
     
     /* Create label inside container */
@@ -785,6 +783,17 @@ static void FPSOverlayInstallMetalFrameHook(void)
     _gestureOverlay.userInteractionEnabled = YES;
     [_glassContainer addSubview:_gestureOverlay];
 
+    /*
+     * A hidden UIView cannot receive touches. Keep a small transparent
+     * triple-tap hotspot on the host window so the HUD can be shown again
+     * after it has been hidden. It is only active while the HUD is hidden.
+     */
+    _hiddenGestureOverlay = [[UIView alloc] init];
+    _hiddenGestureOverlay.backgroundColor = [UIColor clearColor];
+    _hiddenGestureOverlay.userInteractionEnabled = YES;
+    _hiddenGestureOverlay.hidden = !_hidden;
+    [_hostWindow addSubview:_hiddenGestureOverlay];
+
     /* Attach all gestures to overlay */
     UIPanGestureRecognizer *panGesture = [[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)] autorelease];
     UITapGestureRecognizer *doubleTapGesture = [[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleDoubleTap:)] autorelease];
@@ -797,13 +806,21 @@ static void FPSOverlayInstallMetalFrameHook(void)
     tripleTapGesture.numberOfTouchesRequired = 1;
     longPressGesture.minimumPressDuration = 0.6;
     
-    [tripleTapGesture requireGestureRecognizerToFail:doubleTapGesture];
-    [doubleTapGesture requireGestureRecognizerToFail:longPressGesture];
+    /* Triple-tap must win over double-tap. The previous direction was
+       reversed, which caused the triple-tap recognizer to wait for a
+       successful double-tap and therefore never reach recognition. */
+    [doubleTapGesture requireGestureRecognizerToFail:tripleTapGesture];
     
     [_gestureOverlay addGestureRecognizer:panGesture];
     [_gestureOverlay addGestureRecognizer:doubleTapGesture];
     [_gestureOverlay addGestureRecognizer:tripleTapGesture];
     [_gestureOverlay addGestureRecognizer:longPressGesture];
+
+    /* Separate recognizer for restoring a hidden HUD. */
+    UITapGestureRecognizer *hiddenTripleTap = [[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTripleTap:)] autorelease];
+    hiddenTripleTap.numberOfTapsRequired = 3;
+    hiddenTripleTap.numberOfTouchesRequired = 1;
+    [_hiddenGestureOverlay addGestureRecognizer:hiddenTripleTap];
 
     [window addSubview:_glassContainer];
 
@@ -814,6 +831,7 @@ static void FPSOverlayInstallMetalFrameHook(void)
     if (y <= 0.0 || y > window.bounds.size.height - 38.0) y = 20.0;
     _glassContainer.frame = CGRectMake(x, y, 300.0, 38.0);
     _gestureOverlay.frame = _glassContainer.bounds;
+    _hiddenGestureOverlay.frame = _glassContainer.frame;
 
     [self updateLabel];
 }
@@ -858,8 +876,12 @@ static void FPSOverlayInstallMetalFrameHook(void)
     if (!_label) return;
 
     if (_hidden) {
-        _glassContainer.hidden = YES;
+        _glassContainer.hidden = NO;
         _glassContainer.alpha = 0.0;
+        if (_hiddenGestureOverlay) {
+            _hiddenGestureOverlay.hidden = NO;
+            _hiddenGestureOverlay.frame = _glassContainer.frame;
+        }
         return;
     }
 
@@ -869,6 +891,7 @@ static void FPSOverlayInstallMetalFrameHook(void)
 
     _glassContainer.hidden = NO;
     _glassContainer.alpha = 1.0;
+    if (_hiddenGestureOverlay) _hiddenGestureOverlay.hidden = YES;
 
     double fps = _measuredFPS;
     if (fps <= 0.0 && _historyCount > 0) fps = _fpsHistory[_historyCount - 1];
@@ -1020,9 +1043,16 @@ static void FPSOverlayInstallMetalFrameHook(void)
     if (_hostWindow != window || _glassContainer.superview != window) {
         [self createOverlayOnWindow:window];
     } else {
-        _glassContainer.hidden = _hidden;
+        _glassContainer.hidden = NO;
         _glassContainer.alpha = _hidden ? 0.0 : 1.0;
-        [window bringSubviewToFront:_glassContainer];
+        if (_hiddenGestureOverlay) {
+            _hiddenGestureOverlay.hidden = !_hidden;
+            _hiddenGestureOverlay.frame = _glassContainer.frame;
+            [window bringSubviewToFront:_hiddenGestureOverlay];
+            if (!_hidden) [window bringSubviewToFront:_glassContainer];
+        } else {
+            [window bringSubviewToFront:_glassContainer];
+        }
         _label.font = [UIFont monospacedDigitSystemFontOfSize:[self fontSizeForWindow:window] weight:UIFontWeightSemibold];
     }
 
