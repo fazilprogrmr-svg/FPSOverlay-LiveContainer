@@ -21,8 +21,9 @@ A compact, Steam Deck / MangoHud-inspired HUD that displays real-time gaming per
 -  **Drag to reposition**
 -  **Double-tap compact/full toggle**
 -  **Triple-tap hide/show overlay**
--  **Long-press preset cycle**
--  **Saved HUD presets: Default, Minimal, Competitive, Performance**
+-  **Long-press theme cycle**
+-  **Saved theme profiles: Default, Minimal, Neon, Performance**
+-  **Selective metric visibility for cleaner HUD layouts**
 
 ##  Installation
 
@@ -41,16 +42,32 @@ A compact, Steam Deck / MangoHud-inspired HUD that displays real-time gaming per
 - Drag the overlay to reposition it anywhere on the screen.
 - Double-tap the overlay to switch between full and compact mode.
 - Triple-tap the overlay to hide or show the HUD.
-- Long-press the overlay to cycle through the saved presets: Default → Minimal → Competitive → Performance.
+- Long-press the overlay to cycle through themes: Default → Minimal → Neon → Performance.
 
-## Preset Profiles
+## Theme Profiles
 
-The overlay now remembers the selected HUD profile automatically using the system preferences store.
+FPSOverlay now supports multiple visual layouts while keeping the same core metrics.
 
 - **Default**: balanced full HUD with all metrics visible.
-- **Minimal**: compact, less visual noise, best for casual play.
-- **Competitive**: streamlined display tuned for cleaner game visibility.
-- **Performance**: fuller HUD for debugging and benchmarking sessions.
+- **Minimal**: compact, lighter HUD with only the essentials.
+- **Neon**: brighter contrast and more cinematic visual styling.
+- **Performance**: high-visibility mode for benchmarks and debugging sessions.
+
+## Metric Controls
+
+Each theme configures which stats are shown, including:
+
+- FPS
+- CPU
+- GPU
+- RAM
+- Battery
+- Frame Time
+- HZ
+- Thermal State
+- Graph
+
+This allows a more focused display depending on whether you want a clean cinematic view or full performance diagnostics.
 
 ## 📁 Folder Structure
 
