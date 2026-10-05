@@ -14,10 +14,16 @@
 #define BATTERY_SAMPLE_INTERVAL 2.0
 
 typedef NS_ENUM(NSInteger, FPSOverlayPreset) {
-    FPSOverlayPresetDefault = 0,
-    FPSOverlayPresetMinimal = 1,
-    FPSOverlayPresetNeon = 2,
-    FPSOverlayPresetPerformance = 3
+    FPSOverlayPresetLiquidGlass = 0,
+    FPSOverlayPresetPS5 = 1,
+    FPSOverlayPresetXbox = 2,
+    FPSOverlayPresetWindows = 3,
+    FPSOverlayPresetSteamDeck = 4,
+    FPSOverlayPresetNeon = 5,
+    FPSOverlayPresetClassicDark = 6,
+    FPSOverlayPresetMinimal = 7,
+    FPSOverlayPresetPerformance = 8,
+    FPSOverlayPresetNintendo = 9
 };
 
 @class FPSOverlayController;
@@ -83,11 +89,11 @@ static void FPSOverlayInstallMetalFrameHook(void)
 @interface FPSOverlayController : NSObject
 {
     UIView *_gestureOverlay;
-    UIView *_hiddenGestureOverlay;
     UILabel *_label;
     UIView *_glassContainer;
     UIVisualEffectView *_blurView;
     UIWindow *_hostWindow;
+    UITapGestureRecognizer *_tripleTapGesture;
 
     CADisplayLink *_displayLink;
     NSTimer *_refreshTimer;
@@ -148,13 +154,13 @@ static void FPSOverlayInstallMetalFrameHook(void)
         _started = NO;
         _compactMode = NO;
         _hidden = NO;
-        _preset = FPSOverlayPresetDefault;
+        _preset = FPSOverlayPresetLiquidGlass;
         _hudOpacity = 0.52;
 
         NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
         NSInteger savedPreset = [defaults integerForKey:@"FPSOverlay_Preset"];
-        if (savedPreset < FPSOverlayPresetDefault || savedPreset > FPSOverlayPresetPerformance) {
-            savedPreset = FPSOverlayPresetDefault;
+        if (savedPreset < FPSOverlayPresetLiquidGlass || savedPreset > FPSOverlayPresetNintendo) {
+            savedPreset = FPSOverlayPresetLiquidGlass;
         }
         [self applyPreset:(FPSOverlayPreset)savedPreset];
         _hidden = [defaults boolForKey:@"FPSOverlay_Hidden"];
@@ -174,8 +180,11 @@ static void FPSOverlayInstallMetalFrameHook(void)
     [_label removeFromSuperview];
     [_glassContainer removeFromSuperview];
     [_gestureOverlay removeFromSuperview];
-    [_hiddenGestureOverlay removeFromSuperview];
-    [_hiddenGestureOverlay release];
+    if (_tripleTapGesture && _tripleTapGesture.view) {
+        [_tripleTapGesture.view removeGestureRecognizer:_tripleTapGesture];
+    }
+    [_tripleTapGesture release];
+    _tripleTapGesture = nil;
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     [super dealloc];
 }
@@ -183,11 +192,51 @@ static void FPSOverlayInstallMetalFrameHook(void)
 - (NSString *)presetName:(FPSOverlayPreset)preset
 {
     switch (preset) {
+        case FPSOverlayPresetPS5: return @"PS5 Blue";
+        case FPSOverlayPresetXbox: return @"Xbox Green";
+        case FPSOverlayPresetWindows: return @"Windows Blue";
+        case FPSOverlayPresetSteamDeck: return @"Steam Deck";
+        case FPSOverlayPresetNeon: return @"Neon Cyber";
+        case FPSOverlayPresetClassicDark: return @"Classic Dark";
         case FPSOverlayPresetMinimal: return @"Minimal";
-        case FPSOverlayPresetNeon: return @"Neon";
         case FPSOverlayPresetPerformance: return @"Performance";
-        case FPSOverlayPresetDefault:
-        default: return @"Default";
+        case FPSOverlayPresetNintendo: return @"Nintendo Red";
+        case FPSOverlayPresetLiquidGlass:
+        default: return @"iPhone Liquid Glass";
+    }
+}
+
+- (UIColor *)themeAccentColor
+{
+    switch (_preset) {
+        case FPSOverlayPresetPS5: return [UIColor colorWithRed:0.10 green:0.45 blue:1.0 alpha:1.0];
+        case FPSOverlayPresetXbox: return [UIColor colorWithRed:0.10 green:0.85 blue:0.35 alpha:1.0];
+        case FPSOverlayPresetWindows: return [UIColor colorWithRed:0.10 green:0.55 blue:1.0 alpha:1.0];
+        case FPSOverlayPresetSteamDeck: return [UIColor colorWithRed:0.55 green:0.55 blue:0.60 alpha:1.0];
+        case FPSOverlayPresetNeon: return [UIColor colorWithRed:0.85 green:0.25 blue:1.0 alpha:1.0];
+        case FPSOverlayPresetClassicDark: return [UIColor colorWithWhite:0.85 alpha:1.0];
+        case FPSOverlayPresetMinimal: return [UIColor colorWithWhite:0.90 alpha:1.0];
+        case FPSOverlayPresetPerformance: return [UIColor colorWithRed:0.25 green:0.90 blue:1.0 alpha:1.0];
+        case FPSOverlayPresetNintendo: return [UIColor colorWithRed:1.0 green:0.20 blue:0.20 alpha:1.0];
+        case FPSOverlayPresetLiquidGlass:
+        default: return [UIColor colorWithWhite:1.0 alpha:1.0];
+    }
+}
+
+- (UIColor *)glassTintColor
+{
+    switch (_preset) {
+        case FPSOverlayPresetPS5: return [UIColor colorWithRed:0.05 green:0.25 blue:0.75 alpha:0.16];
+        case FPSOverlayPresetXbox: return [UIColor colorWithRed:0.02 green:0.45 blue:0.16 alpha:0.14];
+        case FPSOverlayPresetWindows: return [UIColor colorWithRed:0.02 green:0.30 blue:0.80 alpha:0.14];
+        case FPSOverlayPresetSteamDeck: return [UIColor colorWithWhite:0.12 alpha:0.18];
+        case FPSOverlayPresetNeon: return [UIColor colorWithRed:0.45 green:0.05 blue:0.65 alpha:0.16];
+        case FPSOverlayPresetClassicDark: return [UIColor colorWithWhite:0.0 alpha:0.22];
+        case FPSOverlayPresetMinimal: return [UIColor colorWithWhite:0.0 alpha:0.10];
+        case FPSOverlayPresetPerformance: return [UIColor colorWithRed:0.02 green:0.18 blue:0.22 alpha:0.16];
+        case FPSOverlayPresetNintendo: return [UIColor colorWithRed:0.65 green:0.02 blue:0.02 alpha:0.14];
+        case FPSOverlayPresetLiquidGlass:
+        default: return [UIColor colorWithWhite:0.0 alpha:0.12];
     }
 }
 
@@ -198,31 +247,45 @@ static void FPSOverlayInstallMetalFrameHook(void)
     switch (preset) {
         case FPSOverlayPresetMinimal:
             _compactMode = YES;
-            _hudOpacity = 0.12;
+            _hudOpacity = 0.08;
             break;
+        case FPSOverlayPresetPS5:
+        case FPSOverlayPresetXbox:
+        case FPSOverlayPresetWindows:
+        case FPSOverlayPresetSteamDeck:
         case FPSOverlayPresetNeon:
+        case FPSOverlayPresetNintendo:
             _compactMode = NO;
-            _hudOpacity = 0.20;
+            _hudOpacity = 0.12;
             break;
         case FPSOverlayPresetPerformance:
             _compactMode = NO;
-            _hudOpacity = 0.25;
+            _hudOpacity = 0.16;
             break;
-        case FPSOverlayPresetDefault:
+        case FPSOverlayPresetClassicDark:
+            _compactMode = NO;
+            _hudOpacity = 0.20;
+            break;
+        case FPSOverlayPresetLiquidGlass:
         default:
             _compactMode = NO;
-            _hudOpacity = 0.15;
+            _hudOpacity = 0.12;
             break;
     }
 
     [self savePreferences];
+    if (_glassContainer) {
+        _glassContainer.layer.borderColor = [self themeAccentColor].CGColor;
+        _glassContainer.layer.borderWidth = (_preset == FPSOverlayPresetLiquidGlass) ? 0.55 : 0.8;
+        [self refreshGlassEffectAppearance];
+    }
     [self updateLabel];
     [self animatePresetTransition];
 }
 
 - (void)cyclePreset
 {
-    NSInteger nextPreset = (_preset + 1) % 4;
+    NSInteger nextPreset = (_preset + 1) % 10;
     [self applyPreset:(FPSOverlayPreset)nextPreset];
     [self showPresetIndicator];
 }
@@ -260,7 +323,7 @@ static void FPSOverlayInstallMetalFrameHook(void)
     NSString *presetName = [self presetName:_preset];
     
     UILabel *indicator = [[UILabel alloc] init];
-    indicator.text = [NSString stringWithFormat:@"⚙ %@", presetName];
+    indicator.text = presetName;
     indicator.textColor = [UIColor colorWithWhite:1.0 alpha:1.0];
     indicator.font = [UIFont systemFontOfSize:13.0 weight:UIFontWeightSemibold];
     indicator.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.55];
@@ -316,8 +379,7 @@ static void FPSOverlayInstallMetalFrameHook(void)
     if (frame.origin.y > maxY) frame.origin.y = maxY;
 
     _glassContainer.frame = frame;
-    _gestureOverlay.frame = _glassContainer.bounds;
-    _hiddenGestureOverlay.frame = frame;
+    _gestureOverlay.frame = _glassContainer.frame;
     [panGesture setTranslation:CGPointZero inView:_hostWindow];
 
     if (panGesture.state == UIGestureRecognizerStateEnded ||
@@ -351,10 +413,8 @@ static void FPSOverlayInstallMetalFrameHook(void)
             self->_glassContainer.transform = CGAffineTransformIdentity;
         }
     } completion:^(BOOL finished) {
-        /* Keep glassContainer unhidden so its layout remains valid. */
         self->_glassContainer.hidden = NO;
-        self->_hiddenGestureOverlay.hidden = !self->_hidden;
-        self->_hiddenGestureOverlay.frame = self->_glassContainer.frame;
+        self->_glassContainer.userInteractionEnabled = YES;
     }];
 }
 
@@ -400,8 +460,7 @@ static void FPSOverlayInstallMetalFrameHook(void)
     }
 
     _glassContainer.frame = frame;
-    _gestureOverlay.frame = _glassContainer.bounds;
-    _hiddenGestureOverlay.frame = frame;
+    _gestureOverlay.frame = _glassContainer.frame;
     _blurView.frame = _glassContainer.bounds;
     _label.frame = CGRectMake(10.0, 8.0, frame.size.width - 20.0, frame.size.height - 16.0);
 }
@@ -677,94 +736,84 @@ static void FPSOverlayInstallMetalFrameHook(void)
     return graph;
 }
 
-#pragma mark - UI - Phase 9: True Transparent Liquid Glass
-
 #pragma mark - UI - Phase 9: Native Liquid Glass
+
+static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(UIColor *tintColor)
+{
+    Class glassClass = NSClassFromString(@"UIGlassEffect");
+    if (!glassClass) return nil;
+
+    SEL effectSEL = NSSelectorFromString(@"effectWithStyle:");
+    if (![glassClass respondsToSelector:effectSEL]) return nil;
+
+    typedef id (*FPSGlassFactory)(id, SEL, NSInteger);
+    FPSGlassFactory factory = (FPSGlassFactory)objc_msgSend;
+    UIVisualEffect *effect = (UIVisualEffect *)factory((id)glassClass, effectSEL, 1);
+    if (!effect) return nil;
+
+    SEL tintSEL = NSSelectorFromString(@"setTintColor:");
+    if ([effect respondsToSelector:tintSEL]) {
+        typedef void (*FPSTintSetter)(id, SEL, UIColor *);
+        ((FPSTintSetter)objc_msgSend)(effect, tintSEL, tintColor);
+    }
+
+    SEL interactiveSEL = NSSelectorFromString(@"setInteractive:");
+    if ([effect respondsToSelector:interactiveSEL]) {
+        typedef void (*FPSBoolSetter)(id, SEL, BOOL);
+        ((FPSBoolSetter)objc_msgSend)(effect, interactiveSEL, NO);
+    }
+
+    return effect;
+}
+
+- (void)refreshGlassEffectAppearance
+{
+    if (!_blurView) return;
+
+    // Force a consistent dark glass appearance so the HUD does not switch
+    // between bright/white and dark materials with the phone's system theme.
+    if (@available(iOS 13.0, *)) {
+        _glassContainer.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+        _blurView.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    }
+
+    UIVisualEffect *nativeGlass = FPSOverlayCreateNativeGlassEffect([self glassTintColor]);
+    if (nativeGlass) {
+        _blurView.effect = nativeGlass;
+    }
+}
 
 - (UIView *)makeLiquidGlassContainer
 {
     UIView *container = [[UIView alloc] init];
     container.backgroundColor = [UIColor clearColor];
     container.layer.masksToBounds = YES;
-    container.layer.cornerRadius = 11.0;
+    container.layer.cornerRadius = 12.0;
     if (@available(iOS 13.0, *)) {
         container.layer.cornerCurve = kCACornerCurveContinuous;
+        container.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
     }
 
-    /*
-     * iOS 26+: use Apple's native Liquid Glass effect instead of the old
-     * UIBlurEffect/SystemMaterial approximation. Clear glass keeps the game
-     * visible and avoids the large white panel produced by SystemMaterial.
-     * Older iOS versions fall back to a dark blur.
-     */
-    /*
-     * The GitHub Actions runner may build against a UIKit SDK that predates
-     * the iOS 26 UIGlassEffect headers. Do not reference UIGlassEffect or
-     * UIGlassEffectStyle at compile time. Resolve the class and selector at
-     * runtime instead. This keeps the dylib buildable with older Theos SDKs
-     * while still using Apple's native Liquid Glass on iOS 26+.
-     *
-     * UIGlassEffectStyleClear is the second enum case (Regular = 0,
-     * Clear = 1).
-     */
-    Class glassClass = NSClassFromString(@"UIGlassEffect");
-    if (glassClass) {
-        SEL effectSEL = NSSelectorFromString(@"effectWithStyle:");
-        if ([glassClass respondsToSelector:effectSEL]) {
-            typedef id (*FPSGlassEffectWithStyleIMP)(id, SEL, NSInteger);
-            FPSGlassEffectWithStyleIMP makeGlass =
-                (FPSGlassEffectWithStyleIMP)objc_msgSend;
-            id glassEffect = makeGlass(glassClass, effectSEL, (NSInteger)1);
-
-            if (glassEffect) {
-                SEL setTintSEL = NSSelectorFromString(@"setTintColor:");
-                if ([glassEffect respondsToSelector:setTintSEL]) {
-                    typedef void (*FPSEffectColorIMP)(id, SEL, UIColor *);
-                    ((FPSEffectColorIMP)objc_msgSend)(
-                        glassEffect, setTintSEL,
-                        [UIColor colorWithWhite:0.0 alpha:0.28]);
-                }
-
-                SEL setInteractiveSEL = NSSelectorFromString(@"setInteractive:");
-                if ([glassEffect respondsToSelector:setInteractiveSEL]) {
-                    typedef void (*FPSEffectBoolIMP)(id, SEL, BOOL);
-                    ((FPSEffectBoolIMP)objc_msgSend)(glassEffect, setInteractiveSEL, NO);
-                }
-
-                _blurView = [[UIVisualEffectView alloc] initWithEffect:(UIVisualEffect *)glassEffect];
-            }
-        }
+    UIVisualEffect *nativeGlass = FPSOverlayCreateNativeGlassEffect([self glassTintColor]);
+    if (nativeGlass) {
+        _blurView = [[UIVisualEffectView alloc] initWithEffect:nativeGlass];
+    } else {
+        // Safe fallback for older iOS / older SDK environments.
+        UIBlurEffect *fallback = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterialDark];
+        _blurView = [[UIVisualEffectView alloc] initWithEffect:fallback];
     }
-
-    if (!_blurView) {
-        if (@available(iOS 13.0, *)) {
-            UIBlurEffect *blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemMaterialDark];
-            _blurView = [[UIVisualEffectView alloc] initWithEffect:blurEffect];
-        } else {
-            _blurView = [[UIVisualEffectView alloc] initWithEffect:nil];
-            _blurView.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.30];
-        }
-    }
-
-    /* Add a very subtle dark base behind the native glass so Clear glass
-       does not become a bright white pill over light game scenes. */
-    UIView *glassBase = [[UIView alloc] initWithFrame:container.bounds];
-    glassBase.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.10];
-    glassBase.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    glassBase.userInteractionEnabled = NO;
-    [container addSubview:glassBase];
-    [glassBase release];
 
     _blurView.frame = container.bounds;
     _blurView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    if (@available(iOS 13.0, *)) {
+        _blurView.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    }
     [container addSubview:_blurView];
 
-    /* Very subtle edge definition; native glass provides the main depth. */
-    container.layer.borderWidth = 0.5;
-    container.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.10].CGColor;
-
-    container.layer.shadowColor = UIColor.blackColor.CGColor;
-    container.layer.shadowOpacity = 0.06;
+    container.layer.borderWidth = (_preset == FPSOverlayPresetLiquidGlass) ? 0.55 : 0.8;
+    container.layer.borderColor = [self themeAccentColor].CGColor;
+    container.layer.shadowColor = [UIColor blackColor].CGColor;
+    container.layer.shadowOpacity = 0.12;
     container.layer.shadowOffset = CGSizeMake(0, 2);
     container.layer.shadowRadius = 5.0;
 
@@ -796,6 +845,12 @@ static void FPSOverlayInstallMetalFrameHook(void)
 
 - (void)createOverlayOnWindow:(UIWindow *)window
 {
+    if (_tripleTapGesture && _tripleTapGesture.view) {
+        [_tripleTapGesture.view removeGestureRecognizer:_tripleTapGesture];
+    }
+    [_tripleTapGesture release];
+    _tripleTapGesture = nil;
+
     [_label removeFromSuperview];
     [_glassContainer removeFromSuperview];
     [_gestureOverlay removeFromSuperview];
@@ -811,8 +866,7 @@ static void FPSOverlayInstallMetalFrameHook(void)
     
     /* Create true transparent liquid glass container */
     _glassContainer = [self makeLiquidGlassContainer];
-    /* Keep the glass view itself non-hidden; when HUD is hidden, a small
-       transparent gesture proxy remains available to receive triple-taps. */
+    [self refreshGlassEffectAppearance];
     _glassContainer.hidden = NO;
     _glassContainer.alpha = _hidden ? 0.0 : 1.0;
     
@@ -821,52 +875,33 @@ static void FPSOverlayInstallMetalFrameHook(void)
     _label.font = [UIFont monospacedDigitSystemFontOfSize:[self fontSizeForWindow:window] weight:UIFontWeightSemibold];
     [_glassContainer addSubview:_label];
     
-    /* Create transparent gesture capture overlay */
+    /* Gesture overlay for drag, double-tap compact mode and long-press theme cycle. */
     _gestureOverlay = [[UIView alloc] init];
     _gestureOverlay.backgroundColor = [UIColor clearColor];
     _gestureOverlay.userInteractionEnabled = YES;
-    [_glassContainer addSubview:_gestureOverlay];
 
-    /*
-     * A hidden UIView cannot receive touches. Keep a small transparent
-     * triple-tap hotspot on the host window so the HUD can be shown again
-     * after it has been hidden. It is only active while the HUD is hidden.
-     */
-    _hiddenGestureOverlay = [[UIView alloc] init];
-    _hiddenGestureOverlay.backgroundColor = [UIColor clearColor];
-    _hiddenGestureOverlay.userInteractionEnabled = YES;
-    _hiddenGestureOverlay.hidden = !_hidden;
-    [_hostWindow addSubview:_hiddenGestureOverlay];
-
-    /* Attach all gestures to overlay */
     UIPanGestureRecognizer *panGesture = [[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)] autorelease];
     UITapGestureRecognizer *doubleTapGesture = [[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleDoubleTap:)] autorelease];
-    UITapGestureRecognizer *tripleTapGesture = [[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTripleTap:)] autorelease];
     UILongPressGestureRecognizer *longPressGesture = [[[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleLongPress:)] autorelease];
-    
+
     doubleTapGesture.numberOfTapsRequired = 2;
     doubleTapGesture.numberOfTouchesRequired = 1;
-    tripleTapGesture.numberOfTapsRequired = 3;
-    tripleTapGesture.numberOfTouchesRequired = 1;
     longPressGesture.minimumPressDuration = 0.6;
-    
-    /* Triple-tap must win over double-tap. The previous direction was
-       reversed, which caused the triple-tap recognizer to wait for a
-       successful double-tap and therefore never reach recognition. */
-    [doubleTapGesture requireGestureRecognizerToFail:tripleTapGesture];
-    
+
+    [doubleTapGesture requireGestureRecognizerToFail:longPressGesture];
     [_gestureOverlay addGestureRecognizer:panGesture];
     [_gestureOverlay addGestureRecognizer:doubleTapGesture];
-    [_gestureOverlay addGestureRecognizer:tripleTapGesture];
     [_gestureOverlay addGestureRecognizer:longPressGesture];
 
-    /* Separate recognizer for restoring a hidden HUD. */
-    UITapGestureRecognizer *hiddenTripleTap = [[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTripleTap:)] autorelease];
-    hiddenTripleTap.numberOfTapsRequired = 3;
-    hiddenTripleTap.numberOfTouchesRequired = 1;
-    [_hiddenGestureOverlay addGestureRecognizer:hiddenTripleTap];
-
     [window addSubview:_glassContainer];
+    [window addSubview:_gestureOverlay];
+
+    /* Triple-tap lives on the host window so it still works when the HUD is hidden. */
+    _tripleTapGesture = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTripleTap:)];
+    _tripleTapGesture.numberOfTapsRequired = 3;
+    _tripleTapGesture.numberOfTouchesRequired = 1;
+    _tripleTapGesture.cancelsTouchesInView = NO;
+    [window addGestureRecognizer:_tripleTapGesture];
 
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     CGFloat x = [defaults floatForKey:@"FPSOverlay_LabelOriginX"];
@@ -874,8 +909,7 @@ static void FPSOverlayInstallMetalFrameHook(void)
     if (x <= 0.0 || x > window.bounds.size.width - 80.0) x = 12.0;
     if (y <= 0.0 || y > window.bounds.size.height - 38.0) y = 20.0;
     _glassContainer.frame = CGRectMake(x, y, 300.0, 38.0);
-    _gestureOverlay.frame = _glassContainer.bounds;
-    _hiddenGestureOverlay.frame = _glassContainer.frame;
+    _gestureOverlay.frame = _glassContainer.frame;
 
     [self updateLabel];
 }
@@ -922,10 +956,7 @@ static void FPSOverlayInstallMetalFrameHook(void)
     if (_hidden) {
         _glassContainer.hidden = NO;
         _glassContainer.alpha = 0.0;
-        if (_hiddenGestureOverlay) {
-            _hiddenGestureOverlay.hidden = NO;
-            _hiddenGestureOverlay.frame = _glassContainer.frame;
-        }
+        _glassContainer.userInteractionEnabled = YES;
         return;
     }
 
@@ -935,7 +966,6 @@ static void FPSOverlayInstallMetalFrameHook(void)
 
     _glassContainer.hidden = NO;
     _glassContainer.alpha = 1.0;
-    if (_hiddenGestureOverlay) _hiddenGestureOverlay.hidden = YES;
 
     double fps = _measuredFPS;
     if (fps <= 0.0 && _historyCount > 0) fps = _fpsHistory[_historyCount - 1];
@@ -978,21 +1008,51 @@ static void FPSOverlayInstallMetalFrameHook(void)
         [[[NSMutableAttributedString alloc] initWithString:plain] autorelease];
 
     UIColor *white = [UIColor colorWithWhite:0.99 alpha:1.0];
-    UIColor *cyan = [UIColor colorWithRed:0.2 green:0.85 blue:1.0 alpha:1.0];
-    UIColor *green = [UIColor colorWithRed:0.3 green:1.0 blue:0.5 alpha:1.0];
-    UIColor *pink = [UIColor colorWithRed:1.0 green:0.3 blue:0.65 alpha:1.0];
-    UIColor *orange = [UIColor colorWithRed:1.0 green:0.7 blue:0.2 alpha:1.0];
-    UIColor *purple = [UIColor colorWithRed:0.7 green:0.5 blue:1.0 alpha:1.0];
+    UIColor *cyan = [UIColor colorWithRed:0.20 green:0.85 blue:1.0 alpha:1.0];
+    UIColor *green = [UIColor colorWithRed:0.30 green:1.0 blue:0.50 alpha:1.0];
+    UIColor *pink = [UIColor colorWithRed:1.0 green:0.30 blue:0.65 alpha:1.0];
+    UIColor *orange = [UIColor colorWithRed:1.0 green:0.70 blue:0.20 alpha:1.0];
+    UIColor *purple = [UIColor colorWithRed:0.70 green:0.50 blue:1.0 alpha:1.0];
 
-    if (_preset == FPSOverlayPresetNeon) {
-        cyan = [UIColor colorWithRed:0.1 green:0.95 blue:1.0 alpha:1.0];
-        green = [UIColor colorWithRed:0.2 green:1.0 blue:0.7 alpha:1.0];
-        pink = [UIColor colorWithRed:1.0 green:0.4 blue:0.8 alpha:1.0];
-        orange = [UIColor colorWithRed:1.0 green:0.8 blue:0.2 alpha:1.0];
-        purple = [UIColor colorWithRed:0.65 green:0.5 blue:1.0 alpha:1.0];
-    } else if (_preset == FPSOverlayPresetPerformance) {
-        cyan = [UIColor colorWithRed:0.25 green:0.9 blue:1.0 alpha:1.0];
-        green = [UIColor colorWithRed:0.35 green:1.0 blue:0.55 alpha:1.0];
+    switch (_preset) {
+        case FPSOverlayPresetPS5:
+            cyan = [UIColor colorWithRed:0.15 green:0.50 blue:1.0 alpha:1.0];
+            green = [UIColor colorWithRed:0.25 green:0.70 blue:1.0 alpha:1.0];
+            purple = [UIColor colorWithRed:0.45 green:0.60 blue:1.0 alpha:1.0];
+            break;
+        case FPSOverlayPresetXbox:
+            cyan = [UIColor colorWithRed:0.35 green:1.0 blue:0.55 alpha:1.0];
+            green = [UIColor colorWithRed:0.20 green:1.0 blue:0.35 alpha:1.0];
+            purple = [UIColor colorWithRed:0.55 green:0.95 blue:0.65 alpha:1.0];
+            break;
+        case FPSOverlayPresetWindows:
+            cyan = [UIColor colorWithRed:0.15 green:0.65 blue:1.0 alpha:1.0];
+            green = [UIColor colorWithRed:0.30 green:0.80 blue:1.0 alpha:1.0];
+            purple = [UIColor colorWithRed:0.45 green:0.70 blue:1.0 alpha:1.0];
+            break;
+        case FPSOverlayPresetSteamDeck:
+            cyan = [UIColor colorWithRed:0.70 green:0.72 blue:0.78 alpha:1.0];
+            green = [UIColor colorWithRed:0.80 green:0.82 blue:0.88 alpha:1.0];
+            purple = [UIColor colorWithRed:0.60 green:0.62 blue:0.70 alpha:1.0];
+            break;
+        case FPSOverlayPresetNeon:
+            cyan = [UIColor colorWithRed:0.10 green:0.95 blue:1.0 alpha:1.0];
+            green = [UIColor colorWithRed:0.20 green:1.0 blue:0.70 alpha:1.0];
+            pink = [UIColor colorWithRed:1.0 green:0.40 blue:0.80 alpha:1.0];
+            orange = [UIColor colorWithRed:1.0 green:0.80 blue:0.20 alpha:1.0];
+            purple = [UIColor colorWithRed:0.65 green:0.50 blue:1.0 alpha:1.0];
+            break;
+        case FPSOverlayPresetNintendo:
+            cyan = [UIColor colorWithRed:1.0 green:0.25 blue:0.25 alpha:1.0];
+            green = [UIColor colorWithRed:1.0 green:0.45 blue:0.45 alpha:1.0];
+            purple = [UIColor colorWithRed:1.0 green:0.55 blue:0.55 alpha:1.0];
+            break;
+        case FPSOverlayPresetPerformance:
+            cyan = [UIColor colorWithRed:0.25 green:0.90 blue:1.0 alpha:1.0];
+            green = [UIColor colorWithRed:0.35 green:1.0 blue:0.55 alpha:1.0];
+            break;
+        default:
+            break;
     }
 
     [styled addAttribute:NSForegroundColorAttributeName value:white range:NSMakeRange(0, [plain length])];
@@ -1089,14 +1149,9 @@ static void FPSOverlayInstallMetalFrameHook(void)
     } else {
         _glassContainer.hidden = NO;
         _glassContainer.alpha = _hidden ? 0.0 : 1.0;
-        if (_hiddenGestureOverlay) {
-            _hiddenGestureOverlay.hidden = !_hidden;
-            _hiddenGestureOverlay.frame = _glassContainer.frame;
-            [window bringSubviewToFront:_hiddenGestureOverlay];
-            if (!_hidden) [window bringSubviewToFront:_glassContainer];
-        } else {
-            [window bringSubviewToFront:_glassContainer];
-        }
+        _glassContainer.userInteractionEnabled = YES;
+        [window bringSubviewToFront:_glassContainer];
+        [window bringSubviewToFront:_gestureOverlay];
         _label.font = [UIFont monospacedDigitSystemFontOfSize:[self fontSizeForWindow:window] weight:UIFontWeightSemibold];
     }
 
