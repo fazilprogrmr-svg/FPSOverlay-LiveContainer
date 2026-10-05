@@ -104,6 +104,7 @@ static void FPSOverlayInstallMetalFrameHook(void)
     BOOL _hasBatteryPercent;
 
     BOOL _started;
+    BOOL _compactMode;
 }
 - (void)start;
 - (void)refreshWindow;
@@ -130,6 +131,10 @@ static void FPSOverlayInstallMetalFrameHook(void)
         _batteryPercent = -1.0;
         _hasBatteryPercent = NO;
         _started = NO;
+        _compactMode = NO;
+
+        NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+        _compactMode = [defaults boolForKey:@"FPSOverlay_CompactMode"];
 
         [UIDevice currentDevice].batteryMonitoringEnabled = YES;
     }
@@ -145,6 +150,83 @@ static void FPSOverlayInstallMetalFrameHook(void)
     [_label removeFromSuperview];
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     [super dealloc];
+}
+
+- (void)savePreferences
+{
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    [defaults setBool:_compactMode forKey:@"FPSOverlay_CompactMode"];
+
+    if (_label && _hostWindow) {
+        [defaults setFloat:_label.frame.origin.x forKey:@"FPSOverlay_LabelOriginX"];
+        [defaults setFloat:_label.frame.origin.y forKey:@"FPSOverlay_LabelOriginY"];
+    }
+
+    [defaults synchronize];
+}
+
+- (void)handlePan:(UIPanGestureRecognizer *)panGesture
+{
+    if (!_hostWindow || !_label) return;
+
+    CGPoint translation = [panGesture translationInView:_hostWindow];
+    CGRect frame = _label.frame;
+    frame.origin.x += translation.x;
+    frame.origin.y += translation.y;
+
+    CGFloat minX = 8.0;
+    CGFloat maxX = _hostWindow.bounds.size.width - frame.size.width - 8.0;
+    CGFloat minY = 20.0;
+    CGFloat maxY = _hostWindow.bounds.size.height - frame.size.height - 8.0;
+
+    if (frame.origin.x < minX) frame.origin.x = minX;
+    if (frame.origin.x > maxX) frame.origin.x = maxX;
+    if (frame.origin.y < minY) frame.origin.y = minY;
+    if (frame.origin.y > maxY) frame.origin.y = maxY;
+
+    _label.frame = frame;
+    [panGesture setTranslation:CGPointZero inView:_hostWindow];
+
+    if (panGesture.state == UIGestureRecognizerStateEnded ||
+        panGesture.state == UIGestureRecognizerStateCancelled ||
+        panGesture.state == UIGestureRecognizerStateFailed) {
+        [self savePreferences];
+    }
+}
+
+- (void)handleDoubleTap:(UITapGestureRecognizer *)tapGesture
+{
+    if (tapGesture.state != UIGestureRecognizerStateEnded) return;
+
+    _compactMode = !_compactMode;
+    [self savePreferences];
+    [self updateLabel];
+}
+
+- (void)positionLabelForWindow:(UIWindow *)window
+{
+    if (!_label || !window) return;
+
+    [_label sizeToFit];
+
+    CGFloat pad = 8.0;
+    CGFloat maxWidth = window.bounds.size.width - (pad * 2.0);
+    CGFloat width = _label.bounds.size.width + 16.0;
+    if (width > maxWidth) width = maxWidth;
+
+    CGFloat height = 24.0;
+    CGRect frame = _label.frame;
+    frame.size.width = width;
+    frame.size.height = height;
+
+    if (frame.origin.x <= 0.0 || frame.origin.x > window.bounds.size.width - width) {
+        frame.origin.x = pad;
+    }
+    if (frame.origin.y <= 0.0 || frame.origin.y > window.bounds.size.height - height) {
+        frame.origin.y = 20.0;
+    }
+
+    _label.frame = frame;
 }
 
 #pragma mark - Device
@@ -438,7 +520,7 @@ static void FPSOverlayInstallMetalFrameHook(void)
     label.font = [UIFont monospacedDigitSystemFontOfSize:10.5 weight:UIFontWeightSemibold];
     label.numberOfLines = 1;
     label.textAlignment = NSTextAlignmentLeft;
-    label.userInteractionEnabled = NO;
+    label.userInteractionEnabled = YES;
     label.adjustsFontSizeToFitWidth = YES;
     label.minimumScaleFactor = 0.50;
     label.lineBreakMode = NSLineBreakByClipping;
@@ -468,15 +550,22 @@ static void FPSOverlayInstallMetalFrameHook(void)
     _hostWindow = window;
     _label = [self makeLabel];
     _label.font = [UIFont monospacedDigitSystemFontOfSize:[self fontSizeForWindow:window] weight:UIFontWeightSemibold];
+
+    UIPanGestureRecognizer *panGesture = [[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)] autorelease];
+    UITapGestureRecognizer *doubleTapGesture = [[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleDoubleTap:)] autorelease];
+    doubleTapGesture.numberOfTapsRequired = 2;
+    doubleTapGesture.numberOfTouchesRequired = 1;
+    [_label addGestureRecognizer:panGesture];
+    [_label addGestureRecognizer:doubleTapGesture];
+
     [window addSubview:_label];
 
-    [NSLayoutConstraint activateConstraints:@[
-        [_label.centerXAnchor constraintEqualToAnchor:window.centerXAnchor],
-        [_label.leadingAnchor constraintGreaterThanOrEqualToAnchor:window.leadingAnchor constant:6.0],
-        [_label.trailingAnchor constraintLessThanOrEqualToAnchor:window.trailingAnchor constant:-6.0],
-        [_label.topAnchor constraintEqualToAnchor:window.safeAreaLayoutGuide.topAnchor constant:3.0],
-        [_label.heightAnchor constraintEqualToConstant:23.0]
-    ]];
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    CGFloat x = [defaults floatForKey:@"FPSOverlay_LabelOriginX"];
+    CGFloat y = [defaults floatForKey:@"FPSOverlay_LabelOriginY"];
+    if (x <= 0.0 || x > window.bounds.size.width - 80.0) x = 12.0;
+    if (y <= 0.0 || y > window.bounds.size.height - 32.0) y = 20.0;
+    _label.frame = CGRectMake(x, y, window.bounds.size.width - 24.0, 24.0);
 
     [self updateLabel];
 }
@@ -555,9 +644,15 @@ static void FPSOverlayInstallMetalFrameHook(void)
      */
     NSString *gpuText = [NSString stringWithFormat:@"GPU %@", gpu];
 
-    NSString *plain = [NSString stringWithFormat:
-        @"FPS %.0f | %@ | %@ | RAM %@ | BATT %@ | FT %.1fms | HZ %.0f | Thermal State: %@ | %@",
-        fps, cpuText, gpuText, ramText, battery, frameTime, hz, thermal, graph];
+    NSString *plain;
+    if (_compactMode) {
+        plain = [NSString stringWithFormat:@"FPS %.0f | %@ | RAM %@ | BATT %@ | FT %.1fms | %@",
+                 fps, cpuText, ramText, battery, frameTime, graph];
+    } else {
+        plain = [NSString stringWithFormat:
+            @"FPS %.0f | %@ | %@ | RAM %@ | BATT %@ | FT %.1fms | HZ %.0f | Thermal State: %@ | %@",
+            fps, cpuText, gpuText, ramText, battery, frameTime, hz, thermal, graph];
+    }
 
     NSMutableAttributedString *styled =
         [[[NSMutableAttributedString alloc] initWithString:plain] autorelease];
@@ -584,6 +679,7 @@ static void FPSOverlayInstallMetalFrameHook(void)
     if (r.location != NSNotFound) [styled addAttribute:NSForegroundColorAttributeName value:green range:r];
 
     _label.attributedText = styled;
+    [self positionLabelForWindow:_hostWindow];
 }
 
 #pragma mark - Window / start
