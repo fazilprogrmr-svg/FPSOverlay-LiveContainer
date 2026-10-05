@@ -852,13 +852,19 @@ static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(void)
 
     typedef id (*FPSGlassFactory)(id, SEL, NSInteger);
     FPSGlassFactory factory = (FPSGlassFactory)objc_msgSend;
-    UIVisualEffect *effect = (UIVisualEffect *)factory((id)glassClass, effectSEL, 1);
+    UIVisualEffect *effect = (UIVisualEffect *)factory((id)glassClass, effectSEL, 0);
     if (!effect) return nil;
 
     SEL interactiveSEL = NSSelectorFromString(@"setInteractive:");
     if ([effect respondsToSelector:interactiveSEL]) {
         typedef void (*FPSBoolSetter)(id, SEL, BOOL);
         ((FPSBoolSetter)objc_msgSend)(effect, interactiveSEL, NO);
+    }
+
+    SEL tintSEL = NSSelectorFromString(@"setTintColor:");
+    if ([effect respondsToSelector:tintSEL]) {
+        typedef void (*FPSTintSetter)(id, SEL, id);
+        ((FPSTintSetter)objc_msgSend)(effect, tintSEL, nil);
     }
 
     return effect;
@@ -892,8 +898,15 @@ static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(void)
         if (_themeDecoration) _themeDecoration.hidden = YES;
         if (_themeAccentBar) _themeAccentBar.hidden = YES;
         if (_blurView) {
-            _blurView.effect = FPSOverlayCreateNativeGlassEffect();
+            UIVisualEffect *effect = FPSOverlayCreateNativeGlassEffect();
+            if (effect) {
+                _blurView.effect = effect;
+            } else if (@available(iOS 13.0, *)) {
+                _blurView.effect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemMaterial];
+            }
             _blurView.backgroundColor = [UIColor clearColor];
+            _blurView.layer.cornerRadius = _glassContainer.layer.cornerRadius;
+            _blurView.layer.masksToBounds = YES;
         }
     } else {
         if (_blurView) {
@@ -991,7 +1004,8 @@ static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(void)
     _themeDecoration.backgroundColor = [UIColor clearColor];
     _themeDecoration.layer.cornerRadius = radius;
     _themeDecoration.clipsToBounds = YES;
-    _themeDecoration.layer.borderWidth = 0.0;
+    _themeDecoration.layer.borderWidth = 1.0;
+    _themeDecoration.layer.borderColor = border.CGColor;
 
     _themeAccentBar.hidden = NO;
     _themeAccentBar.backgroundColor = border;
@@ -1008,8 +1022,8 @@ static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(void)
         _themeAccentBar.frame = CGRectMake(0.0, 0.0, _glassContainer.bounds.size.width, 2.0);
     } else if (_preset == FPSOverlayPresetNeon) {
         _themeAccentBar.frame = CGRectMake(7.0, 0.0, _glassContainer.bounds.size.width - 14.0, 2.0);
-        _themeDecoration.layer.borderWidth = 0.8;
-        _themeDecoration.layer.borderColor = [UIColor colorWithRed:1.0 green:0.15 blue:0.85 alpha:0.55].CGColor;
+        _themeDecoration.layer.borderWidth = 1.0;
+        _themeDecoration.layer.borderColor = border.CGColor;
     } else if (_preset == FPSOverlayPresetPerformance) {
         _themeAccentBar.frame = CGRectMake(6.0, 0.0, 2.0, _glassContainer.bounds.size.height);
     } else if (_preset == FPSOverlayPresetNintendo) {
@@ -1033,9 +1047,17 @@ static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(void)
         UIVisualEffect *nativeGlass = FPSOverlayCreateNativeGlassEffect();
         if (nativeGlass) {
             _blurView = [[UIVisualEffectView alloc] initWithEffect:nativeGlass];
+        } else if (@available(iOS 13.0, *)) {
+            // Adaptive fallback only. Never use an artificial black/white panel.
+            _blurView = [[UIVisualEffectView alloc] initWithEffect:
+                          [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemMaterial]];
+        }
+        if (_blurView) {
             _blurView.frame = container.bounds;
             _blurView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
             _blurView.backgroundColor = [UIColor clearColor];
+            _blurView.layer.cornerRadius = 12.0;
+            _blurView.layer.masksToBounds = YES;
             [container addSubview:_blurView];
         }
     }
@@ -1157,6 +1179,18 @@ static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(void)
     if (_gameIconView) {
         [_glassContainer addSubview:_gameIconView];
     }
+
+    // Apple Liquid Glass expects content to live in the visual effect view's contentView.
+    // Move the HUD content there when native glass is active so the material can render
+    // around the actual icon/text content instead of leaving an empty effect surface.
+    if (_preset == FPSOverlayPresetLiquidGlass && _blurView) {
+        [_label removeFromSuperview];
+        [_blurView.contentView addSubview:_label];
+        if (_gameIconView) {
+            [_gameIconView removeFromSuperview];
+            [_blurView.contentView addSubview:_gameIconView];
+        }
+    }
     
     /* Gesture overlay for drag, double-tap compact mode and long-press theme cycle. */
     _gestureOverlay = [[UIView alloc] init];
@@ -1164,6 +1198,8 @@ static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(void)
     _gestureOverlay.userInteractionEnabled = YES;
 
     UIPanGestureRecognizer *panGesture = [[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)] autorelease];
+    panGesture.minimumNumberOfTouches = 1;
+    panGesture.maximumNumberOfTouches = 1;
     UITapGestureRecognizer *doubleTapGesture = [[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleDoubleTap:)] autorelease];
     UITapGestureRecognizer *twoFingerTapGesture = [[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTwoFingerTap:)] autorelease];
     UITapGestureRecognizer *twoFingerDoubleTapGesture = [[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTwoFingerDoubleTap:)] autorelease];
@@ -1179,6 +1215,7 @@ static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(void)
 
     [doubleTapGesture requireGestureRecognizerToFail:longPressGesture];
     [twoFingerTapGesture requireGestureRecognizerToFail:twoFingerDoubleTapGesture];
+    [twoFingerDoubleTapGesture requireGestureRecognizerToFail:panGesture];
     [_gestureOverlay addGestureRecognizer:panGesture];
     [_gestureOverlay addGestureRecognizer:doubleTapGesture];
     [_gestureOverlay addGestureRecognizer:twoFingerTapGesture];
