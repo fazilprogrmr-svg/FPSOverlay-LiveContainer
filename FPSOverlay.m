@@ -722,7 +722,7 @@ static void FPSOverlayInstallMetalFrameHook(void)
                     typedef void (*FPSEffectColorIMP)(id, SEL, UIColor *);
                     ((FPSEffectColorIMP)objc_msgSend)(
                         glassEffect, setTintSEL,
-                        [UIColor colorWithWhite:0.0 alpha:0.16]);
+                        [UIColor colorWithWhite:0.0 alpha:0.28]);
                 }
 
                 SEL setInteractiveSEL = NSSelectorFromString(@"setInteractive:");
@@ -746,16 +746,25 @@ static void FPSOverlayInstallMetalFrameHook(void)
         }
     }
 
+    /* Add a very subtle dark base behind the native glass so Clear glass
+       does not become a bright white pill over light game scenes. */
+    UIView *glassBase = [[UIView alloc] initWithFrame:container.bounds];
+    glassBase.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.10];
+    glassBase.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    glassBase.userInteractionEnabled = NO;
+    [container addSubview:glassBase];
+    [glassBase release];
+
     _blurView.frame = container.bounds;
     _blurView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     [container addSubview:_blurView];
 
     /* Very subtle edge definition; native glass provides the main depth. */
     container.layer.borderWidth = 0.5;
-    container.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.16].CGColor;
+    container.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.10].CGColor;
 
     container.layer.shadowColor = UIColor.blackColor.CGColor;
-    container.layer.shadowOpacity = 0.10;
+    container.layer.shadowOpacity = 0.06;
     container.layer.shadowOffset = CGSizeMake(0, 2);
     container.layer.shadowRadius = 5.0;
 
