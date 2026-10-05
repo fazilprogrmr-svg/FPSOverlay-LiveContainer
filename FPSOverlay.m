@@ -13,6 +13,13 @@
 #define OVERLAY_REFRESH_INTERVAL 0.5
 #define BATTERY_SAMPLE_INTERVAL 2.0
 
+typedef NS_ENUM(NSInteger, FPSOverlayPreset) {
+    FPSOverlayPresetDefault = 0,
+    FPSOverlayPresetMinimal = 1,
+    FPSOverlayPresetCompetitive = 2,
+    FPSOverlayPresetPerformance = 3
+};
+
 @class FPSOverlayController;
 static FPSOverlayController *gFPSOverlayController = nil;
 
@@ -106,9 +113,12 @@ static void FPSOverlayInstallMetalFrameHook(void)
     BOOL _started;
     BOOL _compactMode;
     BOOL _hidden;
+    NSInteger _preset;
+    CGFloat _hudOpacity;
 }
 - (void)start;
 - (void)refreshWindow;
+- (void)applyPreset:(FPSOverlayPreset)preset;
 @end
 
 @implementation FPSOverlayController
@@ -134,10 +144,17 @@ static void FPSOverlayInstallMetalFrameHook(void)
         _started = NO;
         _compactMode = NO;
         _hidden = NO;
+        _preset = FPSOverlayPresetDefault;
+        _hudOpacity = 0.52;
 
         NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-        _compactMode = [defaults boolForKey:@"FPSOverlay_CompactMode"];
+        NSInteger savedPreset = [defaults integerForKey:@"FPSOverlay_Preset"];
+        if (savedPreset < FPSOverlayPresetDefault || savedPreset > FPSOverlayPresetPerformance) {
+            savedPreset = FPSOverlayPresetDefault;
+        }
+        [self applyPreset:(FPSOverlayPreset)savedPreset];
         _hidden = [defaults boolForKey:@"FPSOverlay_Hidden"];
+        _compactMode = [defaults boolForKey:@"FPSOverlay_CompactMode"];
 
         [UIDevice currentDevice].batteryMonitoringEnabled = YES;
     }
@@ -155,9 +172,55 @@ static void FPSOverlayInstallMetalFrameHook(void)
     [super dealloc];
 }
 
+- (NSString *)presetName:(FPSOverlayPreset)preset
+{
+    switch (preset) {
+        case FPSOverlayPresetMinimal: return @"Minimal";
+        case FPSOverlayPresetCompetitive: return @"Competitive";
+        case FPSOverlayPresetPerformance: return @"Performance";
+        case FPSOverlayPresetDefault:
+        default: return @"Default";
+    }
+}
+
+- (void)applyPreset:(FPSOverlayPreset)preset
+{
+    _preset = preset;
+
+    switch (preset) {
+        case FPSOverlayPresetMinimal:
+            _compactMode = YES;
+            _hudOpacity = 0.32;
+            break;
+        case FPSOverlayPresetCompetitive:
+            _compactMode = YES;
+            _hudOpacity = 0.46;
+            break;
+        case FPSOverlayPresetPerformance:
+            _compactMode = NO;
+            _hudOpacity = 0.62;
+            break;
+        case FPSOverlayPresetDefault:
+        default:
+            _compactMode = NO;
+            _hudOpacity = 0.52;
+            break;
+    }
+
+    [self savePreferences];
+    [self updateLabel];
+}
+
+- (void)cyclePreset
+{
+    NSInteger nextPreset = (_preset + 1) % 4;
+    [self applyPreset:(FPSOverlayPreset)nextPreset];
+}
+
 - (void)savePreferences
 {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    [defaults setInteger:_preset forKey:@"FPSOverlay_Preset"];
     [defaults setBool:_compactMode forKey:@"FPSOverlay_CompactMode"];
     [defaults setBool:_hidden forKey:@"FPSOverlay_Hidden"];
 
@@ -225,6 +288,12 @@ static void FPSOverlayInstallMetalFrameHook(void)
 {
     if (tapGesture.state != UIGestureRecognizerStateEnded) return;
     [self toggleVisibility];
+}
+
+- (void)handleLongPress:(UILongPressGestureRecognizer *)gesture
+{
+    if (gesture.state != UIGestureRecognizerStateBegan) return;
+    [self cyclePreset];
 }
 
 - (void)positionLabelForWindow:(UIWindow *)window
@@ -538,7 +607,7 @@ static void FPSOverlayInstallMetalFrameHook(void)
 - (UILabel *)makeLabel
 {
     UILabel *label = [[UILabel alloc] init];
-    label.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.52];
+    label.backgroundColor = [UIColor colorWithWhite:0.0 alpha:_hudOpacity];
     label.layer.cornerRadius = 4.0;
     label.layer.masksToBounds = YES;
     label.font = [UIFont monospacedDigitSystemFontOfSize:10.5 weight:UIFontWeightSemibold];
@@ -580,14 +649,17 @@ static void FPSOverlayInstallMetalFrameHook(void)
     UIPanGestureRecognizer *panGesture = [[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)] autorelease];
     UITapGestureRecognizer *doubleTapGesture = [[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleDoubleTap:)] autorelease];
     UITapGestureRecognizer *tripleTapGesture = [[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTripleTap:)] autorelease];
+    UILongPressGestureRecognizer *longPressGesture = [[[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleLongPress:)] autorelease];
     doubleTapGesture.numberOfTapsRequired = 2;
     doubleTapGesture.numberOfTouchesRequired = 1;
     tripleTapGesture.numberOfTapsRequired = 3;
     tripleTapGesture.numberOfTouchesRequired = 1;
+    longPressGesture.minimumPressDuration = 0.6;
     [tripleTapGesture requireGestureRecognizerToFail:doubleTapGesture];
     [_label addGestureRecognizer:panGesture];
     [_label addGestureRecognizer:doubleTapGesture];
     [_label addGestureRecognizer:tripleTapGesture];
+    [_label addGestureRecognizer:longPressGesture];
 
     [window addSubview:_label];
 
@@ -652,6 +724,7 @@ static void FPSOverlayInstallMetalFrameHook(void)
 
     _label.hidden = NO;
     _label.alpha = 1.0;
+    _label.backgroundColor = [UIColor colorWithWhite:0.0 alpha:_hudOpacity];
 
     double fps = _measuredFPS;
     if (fps <= 0.0 && _historyCount > 0) fps = _fpsHistory[_historyCount - 1];
