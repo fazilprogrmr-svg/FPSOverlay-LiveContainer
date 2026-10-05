@@ -26,6 +26,17 @@ typedef NS_ENUM(NSInteger, FPSOverlayPreset) {
     FPSOverlayPresetNintendo = 9
 };
 
+typedef NS_ENUM(NSInteger, FPSOverlayLayout) {
+    FPSOverlayLayoutHorizontal = 0,
+    FPSOverlayLayoutVertical = 1
+};
+
+typedef NS_ENUM(NSInteger, FPSOverlayDisplayMode) {
+    FPSOverlayDisplayFull = 0,
+    FPSOverlayDisplayTextOnly = 1,
+    FPSOverlayDisplayFPSOnly = 2
+};
+
 @class FPSOverlayController;
 static FPSOverlayController *gFPSOverlayController = nil;
 
@@ -93,6 +104,10 @@ static void FPSOverlayInstallMetalFrameHook(void)
     UIImageView *_gameIconView;
     UIView *_glassContainer;
     UIVisualEffectView *_blurView;
+    UIView *_themeDecoration;
+    UIView *_themeAccentBar;
+    FPSOverlayLayout _layoutMode;
+    FPSOverlayDisplayMode _displayMode;
     UIWindow *_hostWindow;
     UITapGestureRecognizer *_tripleTapGesture;
 
@@ -157,6 +172,8 @@ static void FPSOverlayInstallMetalFrameHook(void)
         _hidden = NO;
         _preset = FPSOverlayPresetLiquidGlass;
         _hudOpacity = 0.52;
+        _layoutMode = FPSOverlayLayoutHorizontal;
+        _displayMode = FPSOverlayDisplayFull;
 
         NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
         NSInteger savedPreset = [defaults integerForKey:@"FPSOverlay_Preset"];
@@ -166,6 +183,10 @@ static void FPSOverlayInstallMetalFrameHook(void)
         [self applyPreset:(FPSOverlayPreset)savedPreset];
         _hidden = [defaults boolForKey:@"FPSOverlay_Hidden"];
         _compactMode = [defaults boolForKey:@"FPSOverlay_CompactMode"];
+        NSInteger savedLayout = [defaults integerForKey:@"FPSOverlay_Layout"];
+        NSInteger savedDisplay = [defaults integerForKey:@"FPSOverlay_DisplayMode"];
+        _layoutMode = (savedLayout == FPSOverlayLayoutVertical) ? FPSOverlayLayoutVertical : FPSOverlayLayoutHorizontal;
+        _displayMode = (savedDisplay >= FPSOverlayDisplayFull && savedDisplay <= FPSOverlayDisplayFPSOnly) ? (FPSOverlayDisplayMode)savedDisplay : FPSOverlayDisplayFull;
 
         [UIDevice currentDevice].batteryMonitoringEnabled = YES;
     }
@@ -181,6 +202,8 @@ static void FPSOverlayInstallMetalFrameHook(void)
     [_label removeFromSuperview];
     [_gameIconView removeFromSuperview];
     [_glassContainer removeFromSuperview];
+    [_themeDecoration removeFromSuperview];
+    [_themeAccentBar removeFromSuperview];
     [_gestureOverlay removeFromSuperview];
     if (_tripleTapGesture && _tripleTapGesture.view) {
         [_tripleTapGesture.view removeGestureRecognizer:_tripleTapGesture];
@@ -195,14 +218,14 @@ static void FPSOverlayInstallMetalFrameHook(void)
 {
     switch (preset) {
         case FPSOverlayPresetPS5: return @"PlayStation";
-        case FPSOverlayPresetXbox: return @"Xbox Green";
+        case FPSOverlayPresetXbox: return @"Xbox";
         case FPSOverlayPresetWindows: return @"Windows Fluent";
         case FPSOverlayPresetSteamDeck: return @"Steam Deck";
-        case FPSOverlayPresetNeon: return @"Neon Cyber";
-        case FPSOverlayPresetClassicDark: return @"Classic Dark";
+        case FPSOverlayPresetNeon: return @"Cyber Neon";
+        case FPSOverlayPresetClassicDark: return @"ROG Gaming";
         case FPSOverlayPresetMinimal: return @"Minimal";
-        case FPSOverlayPresetPerformance: return @"Performance";
-        case FPSOverlayPresetNintendo: return @"Nintendo Red";
+        case FPSOverlayPresetPerformance: return @"MangoHUD";
+        case FPSOverlayPresetNintendo: return @"Nintendo";
         case FPSOverlayPresetLiquidGlass:
         default: return @"iPhone Liquid Glass";
     }
@@ -277,8 +300,6 @@ static void FPSOverlayInstallMetalFrameHook(void)
 
     [self savePreferences];
     if (_glassContainer) {
-        _glassContainer.layer.borderColor = [self themeAccentColor].CGColor;
-        _glassContainer.layer.borderWidth = (_preset == FPSOverlayPresetLiquidGlass) ? 0.55 : 0.8;
         [self refreshGlassEffectAppearance];
     }
     [self updateLabel];
@@ -297,6 +318,8 @@ static void FPSOverlayInstallMetalFrameHook(void)
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     [defaults setInteger:_preset forKey:@"FPSOverlay_Preset"];
     [defaults setBool:_compactMode forKey:@"FPSOverlay_CompactMode"];
+    [defaults setInteger:_layoutMode forKey:@"FPSOverlay_Layout"];
+    [defaults setInteger:_displayMode forKey:@"FPSOverlay_DisplayMode"];
     [defaults setBool:_hidden forKey:@"FPSOverlay_Hidden"];
 
     if (_glassContainer && _hostWindow) {
@@ -325,10 +348,10 @@ static void FPSOverlayInstallMetalFrameHook(void)
     NSString *presetName = [self presetName:_preset];
     
     UILabel *indicator = [[UILabel alloc] init];
-    indicator.text = presetName;
+    indicator.text = [NSString stringWithFormat:@"%@ • %@ • %@", presetName, [self displayModeName], [self layoutModeName]];
     indicator.textColor = [UIColor colorWithWhite:1.0 alpha:1.0];
     indicator.font = [UIFont systemFontOfSize:13.0 weight:UIFontWeightSemibold];
-    indicator.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.55];
+    indicator.backgroundColor = (_preset == FPSOverlayPresetLiquidGlass) ? [UIColor clearColor] : [UIColor colorWithWhite:0.0 alpha:0.55];
     indicator.layer.cornerRadius = 8.0;
     indicator.layer.masksToBounds = YES;
     [indicator sizeToFit];
@@ -399,6 +422,37 @@ static void FPSOverlayInstallMetalFrameHook(void)
     [self animatePresetTransition];
 }
 
+- (void)cycleLayoutMode
+{
+    _layoutMode = (_layoutMode == FPSOverlayLayoutHorizontal) ? FPSOverlayLayoutVertical : FPSOverlayLayoutHorizontal;
+    [self savePreferences];
+    [self updateLabel];
+    [self showPresetIndicator];
+}
+
+- (void)cycleDisplayMode
+{
+    _displayMode = (FPSOverlayDisplayMode)((_displayMode + 1) % 3);
+    [self savePreferences];
+    [self refreshGlassEffectAppearance];
+    [self updateLabel];
+    [self showPresetIndicator];
+}
+
+- (NSString *)displayModeName
+{
+    switch (_displayMode) {
+        case FPSOverlayDisplayTextOnly: return @"Text Only";
+        case FPSOverlayDisplayFPSOnly: return @"FPS Only";
+        default: return @"Full Performance";
+    }
+}
+
+- (NSString *)layoutModeName
+{
+    return _layoutMode == FPSOverlayLayoutVertical ? @"Vertical" : @"Horizontal";
+}
+
 - (void)toggleVisibility
 {
     _hidden = !_hidden;
@@ -426,6 +480,18 @@ static void FPSOverlayInstallMetalFrameHook(void)
     [self toggleCompactMode];
 }
 
+- (void)handleTwoFingerTap:(UITapGestureRecognizer *)tapGesture
+{
+    if (tapGesture.state != UIGestureRecognizerStateEnded) return;
+    [self cycleLayoutMode];
+}
+
+- (void)handleTwoFingerDoubleTap:(UITapGestureRecognizer *)tapGesture
+{
+    if (tapGesture.state != UIGestureRecognizerStateEnded) return;
+    [self cycleDisplayMode];
+}
+
 - (void)handleTripleTap:(UITapGestureRecognizer *)tapGesture
 {
     if (tapGesture.state != UIGestureRecognizerStateEnded) return;
@@ -446,32 +512,61 @@ static void FPSOverlayInstallMetalFrameHook(void)
 
     CGFloat pad = 8.0;
     CGFloat maxWidth = window.bounds.size.width - (pad * 2.0);
-    CGFloat iconSpace = _gameIconView ? 28.0 : 0.0;
-    CGFloat width = _label.bounds.size.width + 28.0 + iconSpace;
-    if (width > maxWidth) width = maxWidth;
+    BOOL vertical = (_layoutMode == FPSOverlayLayoutVertical);
+    BOOL fpsOnly = (_displayMode == FPSOverlayDisplayFPSOnly);
+    BOOL textOnly = (_displayMode == FPSOverlayDisplayTextOnly);
 
-    CGFloat height = 38.0;
+    CGFloat iconSpace = (!_compactMode && !vertical && !textOnly && _gameIconView) ? 28.0 : 0.0;
+    CGFloat width;
+    CGFloat height;
+
+    if (fpsOnly) {
+        width = 76.0;
+        height = 28.0;
+    } else if (vertical) {
+        width = MIN(maxWidth, 150.0);
+        height = _compactMode ? 118.0 : 168.0;
+        if (textOnly) height -= 6.0;
+    } else {
+        width = _label.bounds.size.width + 28.0 + iconSpace;
+        if (width > maxWidth) width = maxWidth;
+        height = textOnly ? 28.0 : 38.0;
+    }
+
     CGRect frame = _glassContainer.frame;
     frame.size.width = width;
     frame.size.height = height;
 
-    if (frame.origin.x <= 0.0 || frame.origin.x > window.bounds.size.width - width) {
-        frame.origin.x = pad;
-    }
-    if (frame.origin.y <= 0.0 || frame.origin.y > window.bounds.size.height - height) {
-        frame.origin.y = 20.0;
-    }
+    if (frame.origin.x <= 0.0 || frame.origin.x > window.bounds.size.width - width) frame.origin.x = pad;
+    if (frame.origin.y <= 0.0 || frame.origin.y > window.bounds.size.height - height) frame.origin.y = 20.0;
 
     _glassContainer.frame = frame;
-    _gestureOverlay.frame = _glassContainer.frame;
-    _blurView.frame = _glassContainer.bounds;
-
-    CGFloat left = 10.0;
-    if (_gameIconView) {
-        _gameIconView.frame = CGRectMake(9.0, 9.0, 20.0, 20.0);
-        left = 35.0;
+    _gestureOverlay.frame = frame;
+    if (_blurView) _blurView.frame = _glassContainer.bounds;
+    if (_themeDecoration) _themeDecoration.frame = _glassContainer.bounds;
+    if (_themeAccentBar && !_themeAccentBar.hidden) {
+        [self applyThemeSurface];
     }
-    _label.frame = CGRectMake(left, 8.0, frame.size.width - left - 10.0, frame.size.height - 16.0);
+
+    if (vertical) {
+        if (_gameIconView && !textOnly && !fpsOnly) {
+            _gameIconView.frame = CGRectMake(10.0, 9.0, 24.0, 24.0);
+            _label.frame = CGRectMake(10.0, 38.0, width - 20.0, height - 46.0);
+        } else {
+            _gameIconView.frame = CGRectZero;
+            _label.frame = CGRectMake(10.0, 8.0, width - 20.0, height - 16.0);
+        }
+    } else {
+        if (_gameIconView && !textOnly && !fpsOnly) {
+            _gameIconView.frame = CGRectMake(9.0, 9.0, 20.0, 20.0);
+            _label.frame = CGRectMake(35.0, 8.0, width - 45.0, height - 16.0);
+        } else {
+            _gameIconView.frame = CGRectZero;
+            _label.frame = CGRectMake(10.0, 4.0, width - 20.0, height - 8.0);
+        }
+    }
+
+    _label.textAlignment = vertical ? NSTextAlignmentLeft : NSTextAlignmentLeft;
 }
 
 #pragma mark - Device
@@ -747,7 +842,7 @@ static void FPSOverlayInstallMetalFrameHook(void)
 
 #pragma mark - UI - Phase 9: Native Liquid Glass
 
-static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(UIColor *tintColor)
+static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(void)
 {
     Class glassClass = NSClassFromString(@"UIGlassEffect");
     if (!glassClass) return nil;
@@ -760,12 +855,6 @@ static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(UIColor *tintColor)
     UIVisualEffect *effect = (UIVisualEffect *)factory((id)glassClass, effectSEL, 1);
     if (!effect) return nil;
 
-    SEL tintSEL = NSSelectorFromString(@"setTintColor:");
-    if ([effect respondsToSelector:tintSEL]) {
-        typedef void (*FPSTintSetter)(id, SEL, UIColor *);
-        ((FPSTintSetter)objc_msgSend)(effect, tintSEL, tintColor);
-    }
-
     SEL interactiveSEL = NSSelectorFromString(@"setInteractive:");
     if ([effect respondsToSelector:interactiveSEL]) {
         typedef void (*FPSBoolSetter)(id, SEL, BOOL);
@@ -777,18 +866,156 @@ static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(UIColor *tintColor)
 
 - (void)refreshGlassEffectAppearance
 {
-    if (!_blurView) return;
+    if (!_glassContainer) return;
 
-    // Force a consistent dark glass appearance so the HUD does not switch
-    // between bright/white and dark materials with the phone's system theme.
-    if (@available(iOS 13.0, *)) {
-        _glassContainer.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
-        _blurView.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    BOOL liquid = (_preset == FPSOverlayPresetLiquidGlass);
+    BOOL bareText = (_displayMode != FPSOverlayDisplayFull);
+    _glassContainer.layer.shadowOpacity = (liquid || bareText) ? 0.0 : 0.18;
+
+    if (bareText) {
+        _glassContainer.backgroundColor = [UIColor clearColor];
+        _glassContainer.layer.borderWidth = 0.0;
+        _glassContainer.layer.borderColor = [UIColor clearColor].CGColor;
+        _glassContainer.layer.shadowOpacity = 0.0;
+        if (_blurView) _blurView.effect = nil;
+        if (_themeDecoration) _themeDecoration.hidden = YES;
+        if (_themeAccentBar) _themeAccentBar.hidden = YES;
+        return;
     }
 
-    UIVisualEffect *nativeGlass = FPSOverlayCreateNativeGlassEffect([self glassTintColor]);
-    if (nativeGlass) {
-        _blurView.effect = nativeGlass;
+    if (liquid) {
+        // Do not force light/dark mode, tint, or a black/white fill.
+        // Native UIGlassEffect owns the material appearance.
+        _glassContainer.backgroundColor = [UIColor clearColor];
+        _glassContainer.layer.borderWidth = 0.0;
+        _glassContainer.layer.borderColor = [UIColor clearColor].CGColor;
+        if (_themeDecoration) _themeDecoration.hidden = YES;
+        if (_themeAccentBar) _themeAccentBar.hidden = YES;
+        if (_blurView) {
+            _blurView.effect = FPSOverlayCreateNativeGlassEffect();
+            _blurView.backgroundColor = [UIColor clearColor];
+        }
+    } else {
+        if (_blurView) {
+            _blurView.effect = nil;
+            _blurView.backgroundColor = [UIColor clearColor];
+        }
+        [self applyThemeSurface];
+    }
+}
+
+- (void)applyThemeSurface
+{
+    if (!_glassContainer) return;
+    if (_themeDecoration) _themeDecoration.hidden = NO;
+
+    _glassContainer.layer.borderWidth = 1.0;
+    _glassContainer.layer.shadowColor = [self themeAccentColor].CGColor;
+    _glassContainer.layer.shadowOffset = CGSizeMake(0, 2);
+    _glassContainer.layer.shadowRadius = 5.0;
+    _glassContainer.layer.shadowOpacity = 0.18;
+
+    UIColor *surface = [UIColor colorWithWhite:0.06 alpha:0.88];
+    UIColor *border = [self themeAccentColor];
+    CGFloat radius = 10.0;
+
+    switch (_preset) {
+        case FPSOverlayPresetPS5:
+            surface = [UIColor colorWithRed:0.035 green:0.055 blue:0.11 alpha:0.94];
+            border = [UIColor colorWithRed:0.20 green:0.45 blue:1.0 alpha:0.85];
+            radius = 8.0;
+            break;
+        case FPSOverlayPresetXbox:
+            surface = [UIColor colorWithRed:0.025 green:0.075 blue:0.045 alpha:0.94];
+            border = [UIColor colorWithRed:0.20 green:0.95 blue:0.42 alpha:0.9];
+            radius = 7.0;
+            break;
+        case FPSOverlayPresetWindows:
+            surface = [UIColor colorWithRed:0.08 green:0.11 blue:0.16 alpha:0.86];
+            border = [UIColor colorWithRed:0.20 green:0.60 blue:1.0 alpha:0.70];
+            radius = 12.0;
+            break;
+        case FPSOverlayPresetSteamDeck:
+            surface = [UIColor colorWithRed:0.055 green:0.065 blue:0.08 alpha:0.96];
+            border = [UIColor colorWithRed:0.48 green:0.62 blue:0.78 alpha:0.65];
+            radius = 5.0;
+            break;
+        case FPSOverlayPresetNeon:
+            surface = [UIColor colorWithRed:0.055 green:0.02 blue:0.09 alpha:0.93];
+            border = [UIColor colorWithRed:0.15 green:0.95 blue:1.0 alpha:0.9];
+            radius = 5.0;
+            break;
+        case FPSOverlayPresetClassicDark:
+            surface = [UIColor colorWithRed:0.055 green:0.055 blue:0.06 alpha:0.96];
+            border = [UIColor colorWithRed:0.95 green:0.20 blue:0.18 alpha:0.9];
+            radius = 3.0;
+            break;
+        case FPSOverlayPresetPerformance:
+            surface = [UIColor colorWithRed:0.025 green:0.07 blue:0.06 alpha:0.94];
+            border = [UIColor colorWithRed:0.25 green:1.0 blue:0.48 alpha:0.75];
+            radius = 4.0;
+            break;
+        case FPSOverlayPresetNintendo:
+            surface = [UIColor colorWithRed:0.10 green:0.035 blue:0.04 alpha:0.95];
+            border = [UIColor colorWithRed:1.0 green:0.20 blue:0.24 alpha:0.9];
+            radius = 11.0;
+            break;
+        case FPSOverlayPresetMinimal:
+            surface = [UIColor colorWithWhite:0.03 alpha:0.52];
+            border = [UIColor colorWithWhite:0.9 alpha:0.35];
+            radius = 4.0;
+            break;
+        case FPSOverlayPresetLiquidGlass:
+        default:
+            break;
+    }
+
+    _glassContainer.backgroundColor = surface;
+    _glassContainer.layer.cornerRadius = radius;
+    _glassContainer.layer.cornerCurve = kCACornerCurveContinuous;
+    _glassContainer.layer.borderColor = border.CGColor;
+
+    if (!_themeDecoration) {
+        _themeDecoration = [[UIView alloc] init];
+        _themeDecoration.userInteractionEnabled = NO;
+        [_glassContainer insertSubview:_themeDecoration atIndex:0];
+    }
+    if (!_themeAccentBar) {
+        _themeAccentBar = [[UIView alloc] init];
+        _themeAccentBar.userInteractionEnabled = NO;
+        [_glassContainer addSubview:_themeAccentBar];
+    }
+
+    _themeDecoration.frame = _glassContainer.bounds;
+    _themeDecoration.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    _themeDecoration.backgroundColor = [UIColor clearColor];
+    _themeDecoration.layer.cornerRadius = radius;
+    _themeDecoration.clipsToBounds = YES;
+    _themeDecoration.layer.borderWidth = 0.0;
+
+    _themeAccentBar.hidden = NO;
+    _themeAccentBar.backgroundColor = border;
+    _themeAccentBar.layer.cornerRadius = 1.5;
+    if (_preset == FPSOverlayPresetPS5) {
+        _themeAccentBar.frame = CGRectMake(0.0, 5.0, 3.0, _glassContainer.bounds.size.height - 10.0);
+    } else if (_preset == FPSOverlayPresetXbox) {
+        _themeAccentBar.frame = CGRectMake(8.0, 0.0, _glassContainer.bounds.size.width - 16.0, 3.0);
+    } else if (_preset == FPSOverlayPresetWindows) {
+        _themeAccentBar.frame = CGRectMake(0.0, 7.0, 2.0, _glassContainer.bounds.size.height - 14.0);
+    } else if (_preset == FPSOverlayPresetSteamDeck) {
+        _themeAccentBar.frame = CGRectMake(0.0, 0.0, 3.0, _glassContainer.bounds.size.height);
+    } else if (_preset == FPSOverlayPresetClassicDark) {
+        _themeAccentBar.frame = CGRectMake(0.0, 0.0, _glassContainer.bounds.size.width, 2.0);
+    } else if (_preset == FPSOverlayPresetNeon) {
+        _themeAccentBar.frame = CGRectMake(7.0, 0.0, _glassContainer.bounds.size.width - 14.0, 2.0);
+        _themeDecoration.layer.borderWidth = 0.8;
+        _themeDecoration.layer.borderColor = [UIColor colorWithRed:1.0 green:0.15 blue:0.85 alpha:0.55].CGColor;
+    } else if (_preset == FPSOverlayPresetPerformance) {
+        _themeAccentBar.frame = CGRectMake(6.0, 0.0, 2.0, _glassContainer.bounds.size.height);
+    } else if (_preset == FPSOverlayPresetNintendo) {
+        _themeAccentBar.frame = CGRectMake(8.0, _glassContainer.bounds.size.height - 3.0, _glassContainer.bounds.size.width - 16.0, 3.0);
+    } else {
+        _themeAccentBar.hidden = YES;
     }
 }
 
@@ -800,31 +1027,18 @@ static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(UIColor *tintColor)
     container.layer.cornerRadius = 12.0;
     if (@available(iOS 13.0, *)) {
         container.layer.cornerCurve = kCACornerCurveContinuous;
-        container.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
     }
 
-    UIVisualEffect *nativeGlass = FPSOverlayCreateNativeGlassEffect([self glassTintColor]);
-    if (nativeGlass) {
-        _blurView = [[UIVisualEffectView alloc] initWithEffect:nativeGlass];
-    } else {
-        // Safe fallback for older iOS / older SDK environments.
-        UIBlurEffect *fallback = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterialDark];
-        _blurView = [[UIVisualEffectView alloc] initWithEffect:fallback];
+    if (_preset == FPSOverlayPresetLiquidGlass) {
+        UIVisualEffect *nativeGlass = FPSOverlayCreateNativeGlassEffect();
+        if (nativeGlass) {
+            _blurView = [[UIVisualEffectView alloc] initWithEffect:nativeGlass];
+            _blurView.frame = container.bounds;
+            _blurView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+            _blurView.backgroundColor = [UIColor clearColor];
+            [container addSubview:_blurView];
+        }
     }
-
-    _blurView.frame = container.bounds;
-    _blurView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    if (@available(iOS 13.0, *)) {
-        _blurView.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
-    }
-    [container addSubview:_blurView];
-
-    container.layer.borderWidth = (_preset == FPSOverlayPresetLiquidGlass) ? 0.55 : 0.8;
-    container.layer.borderColor = [self themeAccentColor].CGColor;
-    container.layer.shadowColor = [UIColor blackColor].CGColor;
-    container.layer.shadowOpacity = 0.12;
-    container.layer.shadowOffset = CGSizeMake(0, 2);
-    container.layer.shadowRadius = 5.0;
 
     return container;
 }
@@ -908,14 +1122,20 @@ static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(UIColor *tintColor)
     [_label removeFromSuperview];
     [_gameIconView removeFromSuperview];
     [_glassContainer removeFromSuperview];
+    [_themeDecoration removeFromSuperview];
+    [_themeAccentBar removeFromSuperview];
     [_gestureOverlay removeFromSuperview];
     [_label release];
     [_gameIconView release];
     [_glassContainer release];
+    [_themeDecoration release];
+    [_themeAccentBar release];
     [_gestureOverlay release];
     _label = nil;
     _gameIconView = nil;
     _glassContainer = nil;
+    _themeDecoration = nil;
+    _themeAccentBar = nil;
     _gestureOverlay = nil;
     _blurView = nil;
 
@@ -945,15 +1165,24 @@ static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(UIColor *tintColor)
 
     UIPanGestureRecognizer *panGesture = [[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)] autorelease];
     UITapGestureRecognizer *doubleTapGesture = [[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleDoubleTap:)] autorelease];
+    UITapGestureRecognizer *twoFingerTapGesture = [[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTwoFingerTap:)] autorelease];
+    UITapGestureRecognizer *twoFingerDoubleTapGesture = [[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTwoFingerDoubleTap:)] autorelease];
     UILongPressGestureRecognizer *longPressGesture = [[[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleLongPress:)] autorelease];
 
     doubleTapGesture.numberOfTapsRequired = 2;
     doubleTapGesture.numberOfTouchesRequired = 1;
+    twoFingerTapGesture.numberOfTapsRequired = 1;
+    twoFingerTapGesture.numberOfTouchesRequired = 2;
+    twoFingerDoubleTapGesture.numberOfTapsRequired = 2;
+    twoFingerDoubleTapGesture.numberOfTouchesRequired = 2;
     longPressGesture.minimumPressDuration = 0.6;
 
     [doubleTapGesture requireGestureRecognizerToFail:longPressGesture];
+    [twoFingerTapGesture requireGestureRecognizerToFail:twoFingerDoubleTapGesture];
     [_gestureOverlay addGestureRecognizer:panGesture];
     [_gestureOverlay addGestureRecognizer:doubleTapGesture];
+    [_gestureOverlay addGestureRecognizer:twoFingerTapGesture];
+    [_gestureOverlay addGestureRecognizer:twoFingerDoubleTapGesture];
     [_gestureOverlay addGestureRecognizer:longPressGesture];
 
     [window addSubview:_glassContainer];
@@ -1058,7 +1287,20 @@ static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(UIColor *tintColor)
     NSString *gpuText = [NSString stringWithFormat:@"GPU %@", gpu];
 
     NSString *plain;
-    if (_compactMode) {
+    if (_displayMode == FPSOverlayDisplayFPSOnly) {
+        plain = [NSString stringWithFormat:@"FPS %.0f", fps];
+    } else if (_displayMode == FPSOverlayDisplayTextOnly) {
+        plain = [NSString stringWithFormat:@"FPS %.0f | CPU %.0f%% | GPU %@ | RAM %@ | BATT %@ | FT %.1fms | HZ %.0f",
+                 fps, _cpuPercent, gpu, ramText, battery, frameTime, hz];
+    } else if (_layoutMode == FPSOverlayLayoutVertical) {
+        if (_compactMode) {
+            plain = [NSString stringWithFormat:@"FPS %.0f\n%@\nRAM %@\nBATT %@\nFT %.1fms\n%@",
+                     fps, cpuText, ramText, battery, frameTime, graph];
+        } else {
+            plain = [NSString stringWithFormat:@"FPS %.0f\n%@\n%@\nRAM %@\nBATT %@\nFT %.1fms\nHZ %.0f\nThermal %@\n%@",
+                     fps, cpuText, gpuText, ramText, battery, frameTime, hz, thermal, graph];
+        }
+    } else if (_compactMode) {
         plain = [NSString stringWithFormat:@"FPS %.0f | %@ | RAM %@ | BATT %@ | FT %.1fms | %@",
                  fps, cpuText, ramText, battery, frameTime, graph];
     } else {
@@ -1132,7 +1374,17 @@ static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(UIColor *tintColor)
     r = [plain rangeOfString:graph options:NSBackwardsSearch range:NSMakeRange(0, [plain length])];
     if (r.location != NSNotFound) [styled addAttribute:NSForegroundColorAttributeName value:green range:r];
 
+    if (_preset == FPSOverlayPresetLiquidGlass) {
+        NSShadow *shadow = [[[NSShadow alloc] init] autorelease];
+        shadow.shadowColor = [UIColor colorWithWhite:0.0 alpha:0.28];
+        shadow.shadowBlurRadius = 2.0;
+        shadow.shadowOffset = CGSizeMake(0.0, 1.0);
+        [styled addAttribute:NSShadowAttributeName value:shadow range:NSMakeRange(0, [plain length])];
+    }
+
     _label.attributedText = styled;
+    _label.numberOfLines = (_layoutMode == FPSOverlayLayoutVertical) ? 0 : 1;
+    _label.adjustsFontSizeToFitWidth = (_layoutMode == FPSOverlayLayoutHorizontal);
     [self positionLabelForWindow:_hostWindow];
 }
 
