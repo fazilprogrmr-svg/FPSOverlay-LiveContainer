@@ -141,6 +141,7 @@ static void FPSOverlayInstallMetalFrameHook(void)
     BOOL _hidden;
     NSInteger _preset;
     CGFloat _hudOpacity;
+    UIGestureRecognizer *_panGestureRecognizer;
 }
 - (void)start;
 - (void)refreshWindow;
@@ -427,6 +428,7 @@ static void FPSOverlayInstallMetalFrameHook(void)
     _layoutMode = (_layoutMode == FPSOverlayLayoutHorizontal) ? FPSOverlayLayoutVertical : FPSOverlayLayoutHorizontal;
     [self savePreferences];
     [self updateLabel];
+    [self refreshGlassEffectAppearance];
     [self showPresetIndicator];
 }
 
@@ -521,8 +523,13 @@ static void FPSOverlayInstallMetalFrameHook(void)
     CGFloat height;
 
     if (fpsOnly) {
-        width = 76.0;
-        height = 28.0;
+        if (vertical) {
+            width = 82.0;
+            height = 42.0;
+        } else {
+            width = 82.0;
+            height = 28.0;
+        }
     } else if (vertical) {
         width = MIN(maxWidth, 150.0);
         height = _compactMode ? 118.0 : 168.0;
@@ -549,7 +556,10 @@ static void FPSOverlayInstallMetalFrameHook(void)
     }
 
     if (vertical) {
-        if (_gameIconView && !textOnly && !fpsOnly) {
+        if (fpsOnly) {
+            _gameIconView.frame = CGRectZero;
+            _label.frame = CGRectMake(8.0, 7.0, width - 16.0, height - 14.0);
+        } else if (_gameIconView && !textOnly && !fpsOnly) {
             _gameIconView.frame = CGRectMake(10.0, 9.0, 24.0, 24.0);
             _label.frame = CGRectMake(10.0, 38.0, width - 20.0, height - 46.0);
         } else {
@@ -566,7 +576,6 @@ static void FPSOverlayInstallMetalFrameHook(void)
         }
     }
 
-    _label.textAlignment = vertical ? NSTextAlignmentLeft : NSTextAlignmentLeft;
 }
 
 #pragma mark - Device
@@ -852,7 +861,7 @@ static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(void)
 
     typedef id (*FPSGlassFactory)(id, SEL, NSInteger);
     FPSGlassFactory factory = (FPSGlassFactory)objc_msgSend;
-    UIVisualEffect *effect = (UIVisualEffect *)factory((id)glassClass, effectSEL, 0);
+    UIVisualEffect *effect = (UIVisualEffect *)factory((id)glassClass, effectSEL, 1);
     if (!effect) return nil;
 
     SEL interactiveSEL = NSSelectorFromString(@"setInteractive:");
@@ -901,8 +910,6 @@ static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(void)
             UIVisualEffect *effect = FPSOverlayCreateNativeGlassEffect();
             if (effect) {
                 _blurView.effect = effect;
-            } else if (@available(iOS 13.0, *)) {
-                _blurView.effect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemMaterial];
             }
             _blurView.backgroundColor = [UIColor clearColor];
             _blurView.layer.cornerRadius = _glassContainer.layer.cornerRadius;
@@ -1038,7 +1045,7 @@ static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(void)
     UIView *container = [[UIView alloc] init];
     container.backgroundColor = [UIColor clearColor];
     container.layer.masksToBounds = YES;
-    container.layer.cornerRadius = 12.0;
+    container.layer.cornerRadius = 14.0;
     if (@available(iOS 13.0, *)) {
         container.layer.cornerCurve = kCACornerCurveContinuous;
     }
@@ -1047,16 +1054,12 @@ static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(void)
         UIVisualEffect *nativeGlass = FPSOverlayCreateNativeGlassEffect();
         if (nativeGlass) {
             _blurView = [[UIVisualEffectView alloc] initWithEffect:nativeGlass];
-        } else if (@available(iOS 13.0, *)) {
-            // Adaptive fallback only. Never use an artificial black/white panel.
-            _blurView = [[UIVisualEffectView alloc] initWithEffect:
-                          [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemMaterial]];
         }
         if (_blurView) {
             _blurView.frame = container.bounds;
             _blurView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
             _blurView.backgroundColor = [UIColor clearColor];
-            _blurView.layer.cornerRadius = 12.0;
+            _blurView.layer.cornerRadius = 14.0;
             _blurView.layer.masksToBounds = YES;
             [container addSubview:_blurView];
         }
@@ -1200,6 +1203,8 @@ static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(void)
     UIPanGestureRecognizer *panGesture = [[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)] autorelease];
     panGesture.minimumNumberOfTouches = 1;
     panGesture.maximumNumberOfTouches = 1;
+    panGesture.cancelsTouchesInView = NO;
+    _panGestureRecognizer = panGesture;
     UITapGestureRecognizer *doubleTapGesture = [[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleDoubleTap:)] autorelease];
     UITapGestureRecognizer *twoFingerTapGesture = [[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTwoFingerTap:)] autorelease];
     UITapGestureRecognizer *twoFingerDoubleTapGesture = [[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTwoFingerDoubleTap:)] autorelease];
@@ -1209,13 +1214,14 @@ static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(void)
     doubleTapGesture.numberOfTouchesRequired = 1;
     twoFingerTapGesture.numberOfTapsRequired = 1;
     twoFingerTapGesture.numberOfTouchesRequired = 2;
+    twoFingerTapGesture.cancelsTouchesInView = NO;
     twoFingerDoubleTapGesture.numberOfTapsRequired = 2;
     twoFingerDoubleTapGesture.numberOfTouchesRequired = 2;
+    twoFingerDoubleTapGesture.cancelsTouchesInView = NO;
     longPressGesture.minimumPressDuration = 0.6;
 
     [doubleTapGesture requireGestureRecognizerToFail:longPressGesture];
     [twoFingerTapGesture requireGestureRecognizerToFail:twoFingerDoubleTapGesture];
-    [twoFingerDoubleTapGesture requireGestureRecognizerToFail:panGesture];
     [_gestureOverlay addGestureRecognizer:panGesture];
     [_gestureOverlay addGestureRecognizer:doubleTapGesture];
     [_gestureOverlay addGestureRecognizer:twoFingerTapGesture];
@@ -1422,6 +1428,8 @@ static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(void)
     _label.attributedText = styled;
     _label.numberOfLines = (_layoutMode == FPSOverlayLayoutVertical) ? 0 : 1;
     _label.adjustsFontSizeToFitWidth = (_layoutMode == FPSOverlayLayoutHorizontal);
+    _label.textAlignment = (_displayMode == FPSOverlayDisplayFPSOnly && _layoutMode == FPSOverlayLayoutVertical)
+        ? NSTextAlignmentCenter : NSTextAlignmentLeft;
     [self positionLabelForWindow:_hostWindow];
 }
 
