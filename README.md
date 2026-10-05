@@ -18,6 +18,9 @@ A compact, Steam Deck / MangoHud-inspired HUD that displays real-time gaming per
 -  **Transparent black HUD**
 -  **LiveContainer compatible**
 -  **Compact one-line design**
+-  **Drag to reposition**
+-  **Double-tap compact/full toggle**
+-  **Triple-tap hide/show overlay**
 
 ##  Installation
 
@@ -30,6 +33,12 @@ A compact, Steam Deck / MangoHud-inspired HUD that displays real-time gaming per
 7. Launch your game. 
 
 > **Note:** The `FPS` folder must be selected in the **Tweak Folder** setting for each game you want to use FPSOverlay with.
+
+## Quick Controls
+
+- Drag the overlay to reposition it anywhere on the screen.
+- Double-tap the overlay to switch between full and compact mode.
+- Triple-tap the overlay to hide or show the HUD.
 
 ## 📁 Folder Structure
 
@@ -65,6 +74,4 @@ FPSOverlay.dylib
 
 ```text
 FPS 60 | CPU A15 Bionic 7%/6C | GPU Apple GPU | RAM 470M/3.6G | BATT 28% | FT 16.7ms | HZ 60 | Thermal State: Normal | ▂▃▅▇█
-
-
-
+```

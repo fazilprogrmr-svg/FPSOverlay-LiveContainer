@@ -105,6 +105,7 @@ static void FPSOverlayInstallMetalFrameHook(void)
 
     BOOL _started;
     BOOL _compactMode;
+    BOOL _hidden;
 }
 - (void)start;
 - (void)refreshWindow;
@@ -132,9 +133,11 @@ static void FPSOverlayInstallMetalFrameHook(void)
         _hasBatteryPercent = NO;
         _started = NO;
         _compactMode = NO;
+        _hidden = NO;
 
         NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
         _compactMode = [defaults boolForKey:@"FPSOverlay_CompactMode"];
+        _hidden = [defaults boolForKey:@"FPSOverlay_Hidden"];
 
         [UIDevice currentDevice].batteryMonitoringEnabled = YES;
     }
@@ -156,6 +159,7 @@ static void FPSOverlayInstallMetalFrameHook(void)
 {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     [defaults setBool:_compactMode forKey:@"FPSOverlay_CompactMode"];
+    [defaults setBool:_hidden forKey:@"FPSOverlay_Hidden"];
 
     if (_label && _hostWindow) {
         [defaults setFloat:_label.frame.origin.x forKey:@"FPSOverlay_LabelOriginX"];
@@ -167,7 +171,7 @@ static void FPSOverlayInstallMetalFrameHook(void)
 
 - (void)handlePan:(UIPanGestureRecognizer *)panGesture
 {
-    if (!_hostWindow || !_label) return;
+    if (!_hostWindow || !_label || _hidden) return;
 
     CGPoint translation = [panGesture translationInView:_hostWindow];
     CGRect frame = _label.frame;
@@ -194,13 +198,33 @@ static void FPSOverlayInstallMetalFrameHook(void)
     }
 }
 
-- (void)handleDoubleTap:(UITapGestureRecognizer *)tapGesture
+- (void)toggleCompactMode
 {
-    if (tapGesture.state != UIGestureRecognizerStateEnded) return;
-
     _compactMode = !_compactMode;
     [self savePreferences];
     [self updateLabel];
+}
+
+- (void)toggleVisibility
+{
+    _hidden = !_hidden;
+    [self savePreferences];
+    if (_label) {
+        _label.hidden = _hidden;
+        _label.alpha = _hidden ? 0.0 : 1.0;
+    }
+}
+
+- (void)handleDoubleTap:(UITapGestureRecognizer *)tapGesture
+{
+    if (tapGesture.state != UIGestureRecognizerStateEnded) return;
+    [self toggleCompactMode];
+}
+
+- (void)handleTripleTap:(UITapGestureRecognizer *)tapGesture
+{
+    if (tapGesture.state != UIGestureRecognizerStateEnded) return;
+    [self toggleVisibility];
 }
 
 - (void)positionLabelForWindow:(UIWindow *)window
@@ -549,14 +573,21 @@ static void FPSOverlayInstallMetalFrameHook(void)
 
     _hostWindow = window;
     _label = [self makeLabel];
+    _label.hidden = _hidden;
+    _label.alpha = _hidden ? 0.0 : 1.0;
     _label.font = [UIFont monospacedDigitSystemFontOfSize:[self fontSizeForWindow:window] weight:UIFontWeightSemibold];
 
     UIPanGestureRecognizer *panGesture = [[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)] autorelease];
     UITapGestureRecognizer *doubleTapGesture = [[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleDoubleTap:)] autorelease];
+    UITapGestureRecognizer *tripleTapGesture = [[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTripleTap:)] autorelease];
     doubleTapGesture.numberOfTapsRequired = 2;
     doubleTapGesture.numberOfTouchesRequired = 1;
+    tripleTapGesture.numberOfTapsRequired = 3;
+    tripleTapGesture.numberOfTouchesRequired = 1;
+    [tripleTapGesture requireGestureRecognizerToFail:doubleTapGesture];
     [_label addGestureRecognizer:panGesture];
     [_label addGestureRecognizer:doubleTapGesture];
+    [_label addGestureRecognizer:tripleTapGesture];
 
     [window addSubview:_label];
 
@@ -609,9 +640,18 @@ static void FPSOverlayInstallMetalFrameHook(void)
 {
     if (!_label) return;
 
+    if (_hidden) {
+        _label.hidden = YES;
+        _label.alpha = 0.0;
+        return;
+    }
+
     if (_hostWindow) {
         _label.font = [UIFont monospacedDigitSystemFontOfSize:[self fontSizeForWindow:_hostWindow] weight:UIFontWeightSemibold];
     }
+
+    _label.hidden = NO;
+    _label.alpha = 1.0;
 
     double fps = _measuredFPS;
     if (fps <= 0.0 && _historyCount > 0) fps = _fpsHistory[_historyCount - 1];
@@ -763,8 +803,8 @@ static void FPSOverlayInstallMetalFrameHook(void)
     if (_hostWindow != window || _label.superview != window) {
         [self createOverlayOnWindow:window];
     } else {
-        _label.hidden = NO;
-        _label.alpha = 1.0;
+        _label.hidden = _hidden;
+        _label.alpha = _hidden ? 0.0 : 1.0;
         [window bringSubviewToFront:_label];
         _label.font = [UIFont monospacedDigitSystemFontOfSize:[self fontSizeForWindow:window] weight:UIFontWeightSemibold];
     }
@@ -881,3 +921,4 @@ static void FPSOverlayInit(void)
         }];
     });
 }
+
