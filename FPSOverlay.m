@@ -97,7 +97,7 @@ static void FPSOverlayInstallMetalFrameHook(void)
 }
 
 
-@interface FPSOverlayController : NSObject
+@interface FPSOverlayController : NSObject <UIGestureRecognizerDelegate>
 {
     UIView *_gestureOverlay;
     UILabel *_label;
