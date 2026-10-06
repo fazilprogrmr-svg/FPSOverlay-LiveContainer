@@ -235,15 +235,16 @@ static void FPSOverlayInstallMetalFrameHook(void)
 - (UIColor *)themeAccentColor
 {
     switch (_preset) {
-        case FPSOverlayPresetPS5: return [UIColor colorWithRed:0.10 green:0.45 blue:1.0 alpha:1.0];
-        case FPSOverlayPresetXbox: return [UIColor colorWithRed:0.10 green:0.85 blue:0.35 alpha:1.0];
-        case FPSOverlayPresetWindows: return [UIColor colorWithRed:0.10 green:0.55 blue:1.0 alpha:1.0];
-        case FPSOverlayPresetSteamDeck: return [UIColor colorWithRed:0.55 green:0.55 blue:0.60 alpha:1.0];
-        case FPSOverlayPresetNeon: return [UIColor colorWithRed:0.85 green:0.25 blue:1.0 alpha:1.0];
-        case FPSOverlayPresetClassicDark: return [UIColor colorWithWhite:0.85 alpha:1.0];
+        // PS5-inspired: current PS5 UI language is neutral/dark here; intentionally NO blue.
+        case FPSOverlayPresetPS5: return [UIColor colorWithWhite:0.88 alpha:1.0];
+        case FPSOverlayPresetXbox: return [UIColor colorWithRed:0.30 green:1.00 blue:0.48 alpha:1.0];
+        case FPSOverlayPresetWindows: return [UIColor colorWithRed:0.35 green:0.72 blue:1.00 alpha:1.0];
+        case FPSOverlayPresetSteamDeck: return [UIColor colorWithRed:0.72 green:0.78 blue:0.88 alpha:1.0];
+        case FPSOverlayPresetNeon: return [UIColor colorWithRed:0.18 green:0.92 blue:1.00 alpha:1.0];
+        case FPSOverlayPresetClassicDark: return [UIColor colorWithRed:1.00 green:0.28 blue:0.22 alpha:1.0];
         case FPSOverlayPresetMinimal: return [UIColor colorWithWhite:0.90 alpha:1.0];
-        case FPSOverlayPresetPerformance: return [UIColor colorWithRed:0.25 green:0.90 blue:1.0 alpha:1.0];
-        case FPSOverlayPresetNintendo: return [UIColor colorWithRed:1.0 green:0.20 blue:0.20 alpha:1.0];
+        case FPSOverlayPresetPerformance: return [UIColor colorWithRed:0.35 green:1.00 blue:0.55 alpha:1.0];
+        case FPSOverlayPresetNintendo: return [UIColor colorWithRed:1.00 green:0.24 blue:0.28 alpha:1.0];
         case FPSOverlayPresetLiquidGlass:
         default: return [UIColor colorWithWhite:1.0 alpha:1.0];
     }
@@ -252,17 +253,17 @@ static void FPSOverlayInstallMetalFrameHook(void)
 - (UIColor *)glassTintColor
 {
     switch (_preset) {
-        case FPSOverlayPresetPS5: return [UIColor colorWithRed:0.05 green:0.25 blue:0.75 alpha:0.16];
-        case FPSOverlayPresetXbox: return [UIColor colorWithRed:0.02 green:0.45 blue:0.16 alpha:0.14];
-        case FPSOverlayPresetWindows: return [UIColor colorWithRed:0.02 green:0.30 blue:0.80 alpha:0.14];
-        case FPSOverlayPresetSteamDeck: return [UIColor colorWithWhite:0.12 alpha:0.18];
-        case FPSOverlayPresetNeon: return [UIColor colorWithRed:0.45 green:0.05 blue:0.65 alpha:0.16];
-        case FPSOverlayPresetClassicDark: return [UIColor colorWithWhite:0.0 alpha:0.22];
-        case FPSOverlayPresetMinimal: return [UIColor colorWithWhite:0.0 alpha:0.10];
-        case FPSOverlayPresetPerformance: return [UIColor colorWithRed:0.02 green:0.18 blue:0.22 alpha:0.16];
-        case FPSOverlayPresetNintendo: return [UIColor colorWithRed:0.65 green:0.02 blue:0.02 alpha:0.14];
+        case FPSOverlayPresetPS5: return [UIColor colorWithWhite:0.55 alpha:0.06];
+        case FPSOverlayPresetXbox: return [UIColor colorWithRed:0.05 green:0.55 blue:0.16 alpha:0.08];
+        case FPSOverlayPresetWindows: return [UIColor colorWithRed:0.10 green:0.42 blue:0.80 alpha:0.08];
+        case FPSOverlayPresetSteamDeck: return [UIColor colorWithRed:0.35 green:0.42 blue:0.55 alpha:0.07];
+        case FPSOverlayPresetNeon: return [UIColor colorWithRed:0.35 green:0.02 blue:0.65 alpha:0.08];
+        case FPSOverlayPresetClassicDark: return [UIColor colorWithRed:0.55 green:0.03 blue:0.02 alpha:0.08];
+        case FPSOverlayPresetMinimal: return [UIColor colorWithWhite:1.0 alpha:0.025];
+        case FPSOverlayPresetPerformance: return [UIColor colorWithRed:0.02 green:0.55 blue:0.25 alpha:0.07];
+        case FPSOverlayPresetNintendo: return [UIColor colorWithRed:0.65 green:0.02 blue:0.04 alpha:0.07];
         case FPSOverlayPresetLiquidGlass:
-        default: return [UIColor colorWithWhite:0.0 alpha:0.12];
+        default: return [UIColor colorWithWhite:1.0 alpha:0.025];
     }
 }
 
@@ -385,6 +386,70 @@ static void FPSOverlayInstallMetalFrameHook(void)
     }
 }
 
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer
+    shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer
+{
+    // Never let the one-finger pan consume a two-finger tap sequence.
+    if (gestureRecognizer == _panGestureRecognizer || otherGestureRecognizer == _panGestureRecognizer) {
+        UIGestureRecognizer *other = (gestureRecognizer == _panGestureRecognizer) ? otherGestureRecognizer : gestureRecognizer;
+        if ([other isKindOfClass:[UITapGestureRecognizer class]]) {
+            UITapGestureRecognizer *tap = (UITapGestureRecognizer *)other;
+            if (tap.numberOfTouchesRequired >= 2) return NO;
+        }
+    }
+    return NO;
+}
+
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer
+    shouldRequireFailureOfGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer
+{
+    // Keep the two-finger double tap ahead of the one-tap recognizer.
+    if ([gestureRecognizer isKindOfClass:[UITapGestureRecognizer class]] &&
+        [otherGestureRecognizer isKindOfClass:[UITapGestureRecognizer class]]) {
+        UITapGestureRecognizer *a = (UITapGestureRecognizer *)gestureRecognizer;
+        UITapGestureRecognizer *b = (UITapGestureRecognizer *)otherGestureRecognizer;
+        if (a.numberOfTouchesRequired == 2 && a.numberOfTapsRequired == 1 &&
+            b.numberOfTouchesRequired == 2 && b.numberOfTapsRequired == 2) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer
+    shouldReceiveTouch:(UITouch *)touch
+{
+    // All overlay gestures must remain available in every display mode.
+    return YES;
+}
+
+- (void)updateGestureOverlayFrame
+{
+    if (!_gestureOverlay || !_glassContainer) return;
+
+    // Keep the visual HUD compact, but give two-finger gestures a usable
+    // invisible touch target. This is especially important in FPS Only mode.
+    CGRect visualFrame = _glassContainer.frame;
+    CGFloat extraX = MAX(18.0, (120.0 - visualFrame.size.width) * 0.5);
+    CGFloat extraY = MAX(14.0, (56.0 - visualFrame.size.height) * 0.5);
+    CGRect hitFrame = CGRectInset(visualFrame, -extraX, -extraY);
+
+    // Keep the gesture target on-screen.
+    if (_hostWindow) {
+        CGRect bounds = _hostWindow.bounds;
+        if (hitFrame.origin.x < 0.0) hitFrame.origin.x = 0.0;
+        if (hitFrame.origin.y < 0.0) hitFrame.origin.y = 0.0;
+        if (CGRectGetMaxX(hitFrame) > bounds.size.width) {
+            hitFrame.origin.x = MAX(0.0, bounds.size.width - hitFrame.size.width);
+        }
+        if (CGRectGetMaxY(hitFrame) > bounds.size.height) {
+            hitFrame.origin.y = MAX(0.0, bounds.size.height - hitFrame.size.height);
+        }
+    }
+
+    _gestureOverlay.frame = hitFrame;
+}
+
 - (void)handlePan:(UIPanGestureRecognizer *)panGesture
 {
     if (!_hostWindow || !_glassContainer || _hidden) return;
@@ -405,7 +470,7 @@ static void FPSOverlayInstallMetalFrameHook(void)
     if (frame.origin.y > maxY) frame.origin.y = maxY;
 
     _glassContainer.frame = frame;
-    _gestureOverlay.frame = _glassContainer.frame;
+    [self updateGestureOverlayFrame];
     [panGesture setTranslation:CGPointZero inView:_hostWindow];
 
     if (panGesture.state == UIGestureRecognizerStateEnded ||
@@ -548,7 +613,7 @@ static void FPSOverlayInstallMetalFrameHook(void)
     if (frame.origin.y <= 0.0 || frame.origin.y > window.bounds.size.height - height) frame.origin.y = 20.0;
 
     _glassContainer.frame = frame;
-    _gestureOverlay.frame = frame;
+    [self updateGestureOverlayFrame];
     if (_blurView) _blurView.frame = _glassContainer.bounds;
     if (_themeDecoration) _themeDecoration.frame = _glassContainer.bounds;
     if (_themeAccentBar && !_themeAccentBar.hidden) {
@@ -853,39 +918,16 @@ static void FPSOverlayInstallMetalFrameHook(void)
 
 static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(void)
 {
-    Class glassClass = NSClassFromString(@"UIGlassEffect");
-    if (!glassClass) return nil;
-
-    SEL effectSEL = NSSelectorFromString(@"effectWithStyle:");
-    if (![glassClass respondsToSelector:effectSEL]) return nil;
-
-    typedef id (*FPSGlassFactory)(id, SEL, NSInteger);
-    FPSGlassFactory factory = (FPSGlassFactory)objc_msgSend;
-    UIVisualEffect *effect = (UIVisualEffect *)factory((id)glassClass, effectSEL, 1);
-    if (!effect) return nil;
-
-    SEL interactiveSEL = NSSelectorFromString(@"setInteractive:");
-    if ([effect respondsToSelector:interactiveSEL]) {
-        typedef void (*FPSBoolSetter)(id, SEL, BOOL);
-        ((FPSBoolSetter)objc_msgSend)(effect, interactiveSEL, NO);
-    }
-
-    SEL tintSEL = NSSelectorFromString(@"setTintColor:");
-    if ([effect respondsToSelector:tintSEL]) {
-        typedef void (*FPSTintSetter)(id, SEL, id);
-        ((FPSTintSetter)objc_msgSend)(effect, tintSEL, nil);
-    }
-
-    return effect;
+    // Intentionally not used for the injected HUD surface.
+    // A custom glass surface is more predictable over LiveContainer game frames.
+    return nil;
 }
 
 - (void)refreshGlassEffectAppearance
 {
     if (!_glassContainer) return;
 
-    BOOL liquid = (_preset == FPSOverlayPresetLiquidGlass);
     BOOL bareText = (_displayMode != FPSOverlayDisplayFull);
-    _glassContainer.layer.shadowOpacity = (liquid || bareText) ? 0.0 : 0.18;
 
     if (bareText) {
         _glassContainer.backgroundColor = [UIColor clearColor];
@@ -898,145 +940,118 @@ static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(void)
         return;
     }
 
-    if (liquid) {
-        // Do not force light/dark mode, tint, or a black/white fill.
-        // Native UIGlassEffect owns the material appearance.
-        _glassContainer.backgroundColor = [UIColor clearColor];
-        _glassContainer.layer.borderWidth = 0.0;
-        _glassContainer.layer.borderColor = [UIColor clearColor].CGColor;
-        if (_themeDecoration) _themeDecoration.hidden = YES;
-        if (_themeAccentBar) _themeAccentBar.hidden = YES;
-        if (_blurView) {
-            UIVisualEffect *effect = FPSOverlayCreateNativeGlassEffect();
-            if (effect) {
-                _blurView.effect = effect;
-            }
-            _blurView.backgroundColor = [UIColor clearColor];
-            _blurView.layer.cornerRadius = _glassContainer.layer.cornerRadius;
-            _blurView.layer.masksToBounds = YES;
-        }
-    } else {
-        if (_blurView) {
-            _blurView.effect = nil;
-            _blurView.backgroundColor = [UIColor clearColor];
-        }
-        [self applyThemeSurface];
-    }
+    [self applyThemeSurface];
 }
 
 - (void)applyThemeSurface
 {
     if (!_glassContainer) return;
-    if (_themeDecoration) _themeDecoration.hidden = NO;
 
-    _glassContainer.layer.borderWidth = 1.0;
-    _glassContainer.layer.shadowColor = [self themeAccentColor].CGColor;
-    _glassContainer.layer.shadowOffset = CGSizeMake(0, 2);
-    _glassContainer.layer.shadowRadius = 5.0;
-    _glassContainer.layer.shadowOpacity = 0.18;
-
-    UIColor *surface = [UIColor colorWithWhite:0.06 alpha:0.88];
     UIColor *border = [self themeAccentColor];
+    UIColor *tint = [self glassTintColor];
     CGFloat radius = 10.0;
+
+    // Glassy surfaces: the game remains visible underneath, while the theme
+    // identity comes primarily from the perimeter and subtle tint.
+    UIColor *surface = [UIColor colorWithWhite:0.04 alpha:0.28];
 
     switch (_preset) {
         case FPSOverlayPresetPS5:
-            surface = [UIColor colorWithRed:0.035 green:0.055 blue:0.11 alpha:0.94];
-            border = [UIColor colorWithRed:0.20 green:0.45 blue:1.0 alpha:0.85];
-            radius = 8.0;
+            // PS5 OS-inspired: neutral graphite / silver, deliberately no blue.
+            surface = [UIColor colorWithWhite:0.045 alpha:0.34];
+            border = [UIColor colorWithWhite:0.82 alpha:0.78];
+            radius = 9.0;
             break;
         case FPSOverlayPresetXbox:
-            surface = [UIColor colorWithRed:0.025 green:0.075 blue:0.045 alpha:0.94];
-            border = [UIColor colorWithRed:0.20 green:0.95 blue:0.42 alpha:0.9];
-            radius = 7.0;
+            surface = [UIColor colorWithRed:0.02 green:0.08 blue:0.04 alpha:0.32];
+            radius = 9.0;
             break;
         case FPSOverlayPresetWindows:
-            surface = [UIColor colorWithRed:0.08 green:0.11 blue:0.16 alpha:0.86];
-            border = [UIColor colorWithRed:0.20 green:0.60 blue:1.0 alpha:0.70];
+            surface = [UIColor colorWithRed:0.04 green:0.07 blue:0.11 alpha:0.30];
             radius = 12.0;
             break;
         case FPSOverlayPresetSteamDeck:
-            surface = [UIColor colorWithRed:0.055 green:0.065 blue:0.08 alpha:0.96];
-            border = [UIColor colorWithRed:0.48 green:0.62 blue:0.78 alpha:0.65];
-            radius = 5.0;
+            surface = [UIColor colorWithRed:0.035 green:0.045 blue:0.065 alpha:0.34];
+            border = [UIColor colorWithRed:0.66 green:0.72 blue:0.82 alpha:0.80];
+            radius = 7.0;
             break;
         case FPSOverlayPresetNeon:
-            surface = [UIColor colorWithRed:0.055 green:0.02 blue:0.09 alpha:0.93];
-            border = [UIColor colorWithRed:0.15 green:0.95 blue:1.0 alpha:0.9];
-            radius = 5.0;
+            surface = [UIColor colorWithRed:0.06 green:0.015 blue:0.10 alpha:0.30];
+            radius = 8.0;
             break;
         case FPSOverlayPresetClassicDark:
-            surface = [UIColor colorWithRed:0.055 green:0.055 blue:0.06 alpha:0.96];
-            border = [UIColor colorWithRed:0.95 green:0.20 blue:0.18 alpha:0.9];
-            radius = 3.0;
+            surface = [UIColor colorWithRed:0.055 green:0.035 blue:0.035 alpha:0.34];
+            radius = 6.0;
             break;
         case FPSOverlayPresetPerformance:
-            surface = [UIColor colorWithRed:0.025 green:0.07 blue:0.06 alpha:0.94];
-            border = [UIColor colorWithRed:0.25 green:1.0 blue:0.48 alpha:0.75];
-            radius = 4.0;
+            surface = [UIColor colorWithRed:0.015 green:0.075 blue:0.045 alpha:0.32];
+            radius = 7.0;
             break;
         case FPSOverlayPresetNintendo:
-            surface = [UIColor colorWithRed:0.10 green:0.035 blue:0.04 alpha:0.95];
-            border = [UIColor colorWithRed:1.0 green:0.20 blue:0.24 alpha:0.9];
+            surface = [UIColor colorWithRed:0.09 green:0.025 blue:0.035 alpha:0.32];
             radius = 11.0;
             break;
         case FPSOverlayPresetMinimal:
-            surface = [UIColor colorWithWhite:0.03 alpha:0.52];
-            border = [UIColor colorWithWhite:0.9 alpha:0.35];
-            radius = 4.0;
+            surface = [UIColor colorWithWhite:0.05 alpha:0.20];
+            border = [UIColor colorWithWhite:0.90 alpha:0.55];
+            radius = 7.0;
             break;
         case FPSOverlayPresetLiquidGlass:
         default:
+            surface = [UIColor colorWithWhite:1.0 alpha:0.035];
+            border = [UIColor colorWithWhite:1.0 alpha:0.52];
+            radius = 16.0;
             break;
     }
 
     _glassContainer.backgroundColor = surface;
     _glassContainer.layer.cornerRadius = radius;
     _glassContainer.layer.cornerCurve = kCACornerCurveContinuous;
+    _glassContainer.layer.borderWidth = 0.85;
     _glassContainer.layer.borderColor = border.CGColor;
+    _glassContainer.layer.shadowColor = [UIColor blackColor].CGColor;
+    _glassContainer.layer.shadowOffset = CGSizeMake(0.0, 2.0);
+    _glassContainer.layer.shadowRadius = 7.0;
+    _glassContainer.layer.shadowOpacity = 0.24;
+    _glassContainer.layer.masksToBounds = NO;
+
+    // A real blur material gives every full-performance theme a glass depth.
+    // It is intentionally dark/ultra-thin so it never becomes a white card.
+    if (_blurView) {
+        if (@available(iOS 13.0, *)) {
+            _blurView.effect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterialDark];
+        } else {
+            _blurView.effect = nil;
+        }
+        _blurView.backgroundColor = tint;
+        _blurView.frame = _glassContainer.bounds;
+        _blurView.layer.cornerRadius = radius;
+        _blurView.layer.cornerCurve = kCACornerCurveContinuous;
+        _blurView.layer.masksToBounds = YES;
+    }
 
     if (!_themeDecoration) {
         _themeDecoration = [[UIView alloc] init];
         _themeDecoration.userInteractionEnabled = NO;
-        [_glassContainer insertSubview:_themeDecoration atIndex:0];
-    }
-    if (!_themeAccentBar) {
-        _themeAccentBar = [[UIView alloc] init];
-        _themeAccentBar.userInteractionEnabled = NO;
-        [_glassContainer addSubview:_themeAccentBar];
+        [_glassContainer insertSubview:_themeDecoration aboveSubview:_blurView];
+    } else {
+        [_glassContainer bringSubviewToFront:_themeDecoration];
     }
 
+    // One complete continuous perimeter. No separate accent bars.
     _themeDecoration.frame = _glassContainer.bounds;
     _themeDecoration.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     _themeDecoration.backgroundColor = [UIColor clearColor];
-    _themeDecoration.layer.cornerRadius = radius;
+    _themeDecoration.layer.cornerRadius = radius - 0.5;
+    _themeDecoration.layer.cornerCurve = kCACornerCurveContinuous;
     _themeDecoration.clipsToBounds = YES;
-    _themeDecoration.layer.borderWidth = 1.0;
-    _themeDecoration.layer.borderColor = border.CGColor;
+    _themeDecoration.layer.borderWidth = 0.55;
+    _themeDecoration.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:(_preset == FPSOverlayPresetLiquidGlass ? 0.22 : 0.12)].CGColor;
+    _themeDecoration.hidden = NO;
 
-    _themeAccentBar.hidden = NO;
-    _themeAccentBar.backgroundColor = border;
-    _themeAccentBar.layer.cornerRadius = 1.5;
-    if (_preset == FPSOverlayPresetPS5) {
-        _themeAccentBar.frame = CGRectMake(0.0, 5.0, 3.0, _glassContainer.bounds.size.height - 10.0);
-    } else if (_preset == FPSOverlayPresetXbox) {
-        _themeAccentBar.frame = CGRectMake(8.0, 0.0, _glassContainer.bounds.size.width - 16.0, 3.0);
-    } else if (_preset == FPSOverlayPresetWindows) {
-        _themeAccentBar.frame = CGRectMake(0.0, 7.0, 2.0, _glassContainer.bounds.size.height - 14.0);
-    } else if (_preset == FPSOverlayPresetSteamDeck) {
-        _themeAccentBar.frame = CGRectMake(0.0, 0.0, 3.0, _glassContainer.bounds.size.height);
-    } else if (_preset == FPSOverlayPresetClassicDark) {
-        _themeAccentBar.frame = CGRectMake(0.0, 0.0, _glassContainer.bounds.size.width, 2.0);
-    } else if (_preset == FPSOverlayPresetNeon) {
-        _themeAccentBar.frame = CGRectMake(7.0, 0.0, _glassContainer.bounds.size.width - 14.0, 2.0);
-        _themeDecoration.layer.borderWidth = 1.0;
-        _themeDecoration.layer.borderColor = border.CGColor;
-    } else if (_preset == FPSOverlayPresetPerformance) {
-        _themeAccentBar.frame = CGRectMake(6.0, 0.0, 2.0, _glassContainer.bounds.size.height);
-    } else if (_preset == FPSOverlayPresetNintendo) {
-        _themeAccentBar.frame = CGRectMake(8.0, _glassContainer.bounds.size.height - 3.0, _glassContainer.bounds.size.width - 16.0, 3.0);
-    } else {
+    if (_themeAccentBar) {
         _themeAccentBar.hidden = YES;
+        _themeAccentBar.frame = CGRectZero;
     }
 }
 
@@ -1044,26 +1059,21 @@ static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(void)
 {
     UIView *container = [[UIView alloc] init];
     container.backgroundColor = [UIColor clearColor];
-    container.layer.masksToBounds = YES;
-    container.layer.cornerRadius = 14.0;
-    if (@available(iOS 13.0, *)) {
-        container.layer.cornerCurve = kCACornerCurveContinuous;
-    }
+    container.layer.masksToBounds = NO;
+    container.layer.cornerRadius = (_preset == FPSOverlayPresetLiquidGlass) ? 16.0 : 10.0;
+    if (@available(iOS 13.0, *)) container.layer.cornerCurve = kCACornerCurveContinuous;
 
-    if (_preset == FPSOverlayPresetLiquidGlass) {
-        UIVisualEffect *nativeGlass = FPSOverlayCreateNativeGlassEffect();
-        if (nativeGlass) {
-            _blurView = [[UIVisualEffectView alloc] initWithEffect:nativeGlass];
-        }
-        if (_blurView) {
-            _blurView.frame = container.bounds;
-            _blurView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-            _blurView.backgroundColor = [UIColor clearColor];
-            _blurView.layer.cornerRadius = 14.0;
-            _blurView.layer.masksToBounds = YES;
-            [container addSubview:_blurView];
-        }
-    }
+    // All full-performance themes use the same glass foundation. Theme color
+    // is carried by the border/tint rather than a heavy opaque panel.
+    _blurView = [[UIVisualEffectView alloc] initWithEffect:nil];
+    _blurView.frame = container.bounds;
+    _blurView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    _blurView.backgroundColor = [UIColor clearColor];
+    _blurView.userInteractionEnabled = NO;
+    _blurView.layer.cornerRadius = container.layer.cornerRadius;
+    _blurView.layer.cornerCurve = kCACornerCurveContinuous;
+    _blurView.layer.masksToBounds = YES;
+    [container addSubview:_blurView];
 
     return container;
 }
@@ -1183,27 +1193,18 @@ static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(void)
         [_glassContainer addSubview:_gameIconView];
     }
 
-    // Apple Liquid Glass expects content to live in the visual effect view's contentView.
-    // Move the HUD content there when native glass is active so the material can render
-    // around the actual icon/text content instead of leaving an empty effect surface.
-    if (_preset == FPSOverlayPresetLiquidGlass && _blurView) {
-        [_label removeFromSuperview];
-        [_blurView.contentView addSubview:_label];
-        if (_gameIconView) {
-            [_gameIconView removeFromSuperview];
-            [_blurView.contentView addSubview:_gameIconView];
-        }
-    }
     
     /* Gesture overlay for drag, double-tap compact mode and long-press theme cycle. */
     _gestureOverlay = [[UIView alloc] init];
     _gestureOverlay.backgroundColor = [UIColor clearColor];
     _gestureOverlay.userInteractionEnabled = YES;
+    _gestureOverlay.multipleTouchEnabled = YES;
 
     UIPanGestureRecognizer *panGesture = [[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)] autorelease];
     panGesture.minimumNumberOfTouches = 1;
     panGesture.maximumNumberOfTouches = 1;
     panGesture.cancelsTouchesInView = NO;
+    panGesture.delegate = self;
     _panGestureRecognizer = panGesture;
     UITapGestureRecognizer *doubleTapGesture = [[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleDoubleTap:)] autorelease];
     UITapGestureRecognizer *twoFingerTapGesture = [[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTwoFingerTap:)] autorelease];
@@ -1212,16 +1213,28 @@ static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(void)
 
     doubleTapGesture.numberOfTapsRequired = 2;
     doubleTapGesture.numberOfTouchesRequired = 1;
+    doubleTapGesture.cancelsTouchesInView = NO;
+    doubleTapGesture.delegate = self;
+
     twoFingerTapGesture.numberOfTapsRequired = 1;
     twoFingerTapGesture.numberOfTouchesRequired = 2;
     twoFingerTapGesture.cancelsTouchesInView = NO;
+    twoFingerTapGesture.delegate = self;
+
     twoFingerDoubleTapGesture.numberOfTapsRequired = 2;
     twoFingerDoubleTapGesture.numberOfTouchesRequired = 2;
     twoFingerDoubleTapGesture.cancelsTouchesInView = NO;
-    longPressGesture.minimumPressDuration = 0.6;
+    twoFingerDoubleTapGesture.delegate = self;
 
-    [doubleTapGesture requireGestureRecognizerToFail:longPressGesture];
+    longPressGesture.minimumPressDuration = 0.6;
+    longPressGesture.numberOfTouchesRequired = 1;
+    longPressGesture.cancelsTouchesInView = NO;
+    longPressGesture.delegate = self;
+
+    // Two-finger double-tap gets priority over the single two-finger tap.
     [twoFingerTapGesture requireGestureRecognizerToFail:twoFingerDoubleTapGesture];
+    // One-finger double-tap waits for the long-press to fail.
+    [doubleTapGesture requireGestureRecognizerToFail:longPressGesture];
     [_gestureOverlay addGestureRecognizer:panGesture];
     [_gestureOverlay addGestureRecognizer:doubleTapGesture];
     [_gestureOverlay addGestureRecognizer:twoFingerTapGesture];
@@ -1244,7 +1257,7 @@ static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(void)
     if (x <= 0.0 || x > window.bounds.size.width - 80.0) x = 12.0;
     if (y <= 0.0 || y > window.bounds.size.height - 38.0) y = 20.0;
     _glassContainer.frame = CGRectMake(x, y, 300.0, 38.0);
-    _gestureOverlay.frame = _glassContainer.frame;
+    [self updateGestureOverlayFrame];
 
     [self updateLabel];
 }
