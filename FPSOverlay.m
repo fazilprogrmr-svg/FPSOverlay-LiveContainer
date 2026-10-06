@@ -916,12 +916,6 @@ static void FPSOverlayInstallMetalFrameHook(void)
 
 #pragma mark - UI - Phase 9: Native Liquid Glass
 
-static UIVisualEffect *FPSOverlayCreateNativeGlassEffect(void)
-{
-    // Intentionally not used for the injected HUD surface.
-    // A custom glass surface is more predictable over LiveContainer game frames.
-    return nil;
-}
 
 - (void)refreshGlassEffectAppearance
 {
