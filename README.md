@@ -19,6 +19,26 @@ Displays real-time FPS, CPU, GPU, RAM, battery, frame time, refresh rate, therma
 
 ## How to Use
 
+| Touch / Gesture | Action | Result |
+|---|---|---|
+| **1 Finger — Drag** | Move HUD | Moves the overlay around the screen |
+| **1 Finger — Double Tap** | Compact / Full | Switches between compact and full HUD |
+| **1 Finger — Triple Tap** | Hide / Show | Hides or shows the overlay |
+| **1 Finger — Long Press** | Change Theme | Cycles through available themes |
+| **2 Fingers — Single Tap** | Change Layout | Horizontal ↔ Vertical |
+| **2 Fingers — Double Tap** | Change Display Mode | Full Performance → Text Only → FPS Only → Full Performance |
+
+| Mode | Shows |
+|---|---|
+| **Full Performance** | Complete performance HUD |
+| **Text Only** | Performance information without glass/decorative panel |
+| **FPS Only** | FPS number only |
+
+| Layout | Description |
+|---|---|
+| **Horizontal** | Performance information arranged left-to-right |
+| **Vertical** | Performance information arranged top-to-bottom |
+
 ### Move the Overlay
 
 **Drag** the HUD to move it anywhere on the screen.
