@@ -217,7 +217,7 @@ The project has a dedicated interactive landing page with:
 - Responsive design
 
 **Website:**  
-https://fazilprogrmr-svg.github.io/FPSOverlay/
+https://fzfalcon.github.io/FPSOverlay/
 
 ---
 
