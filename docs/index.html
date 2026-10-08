@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FPSOverlay — Performance, at a glance.</title>
+<meta name="description" content="FPSOverlay is a lightweight performance overlay for iOS games running through LiveContainer.">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="noise"></div><div class="mouse-glow" aria-hidden="true"></div><div class="ambient a1"></div><div class="ambient a2"></div>
+<header class="nav"><a class="brand" href="#top"><span class="dot"></span>FPSOverlay</a><div class="nav-mid"><span>iOS / LIVECONTAINER</span><i></i><span>OPEN SOURCE</span></div><nav><a href="#features">Features</a><a href="#screens">Screens</a><a href="https://github.com/fazilprogrmr-svg/FPSOverlay-LiveContainer" target="_blank">GitHub ↗</a></nav></header>
+<main id="top">
+<section class="hero">
+ <div class="hero-left">
+  <div class="kicker"><span class="pulse"></span> LIVE PERFORMANCE TELEMETRY <b>2026</b></div>
+  <h1>SEE EVERY<br><em>FRAME.</em></h1>
+  <p class="lead">A lightweight performance overlay for iOS gaming through LiveContainer. FPS, CPU, GPU, RAM, battery, frame time, Hz and thermal state — visible while you play.</p>
+  <div class="hero-actions"><a class="btn primary" href="https://github.com/fazilprogrmr-svg/FPSOverlay-LiveContainer/releases" target="_blank"><span>Download FPSOverlay</span><b>↗</b></a><a class="btn ghost" href="#screens">Explore screenshots <b>↓</b></a></div>
+  <div class="micro-stats"><div><span>FPS</span><strong id="liveFps">60</strong></div><div><span>FRAME TIME</span><strong id="liveFt">16.7ms</strong></div><div><span>REFRESH</span><strong>60Hz</strong></div><div><span>THERMAL</span><strong class="ok">NORMAL</strong></div></div>
+ </div>
+ <div class="hero-right">
+   <div class="device-shadow"></div>
+   <div class="game-device">
+    <div class="metal-edge"><div class="screen"><img id="heroScreen" src="assets/bully-wide.jpeg" alt="FPSOverlay running in Bully"><div class="glass"></div><div class="screen-scan"></div></div></div>
+    <div class="side-label"><span>FPSOVERLAY</span><b>LANDSCAPE MODE</b></div>
+   </div>
+   <div class="float-card c1"><small>GPU</small><b>APPLE A15</b><span>ACTIVE</span></div>
+   <div class="float-card c2"><small>RAM</small><b>142M / 3.6G</b><span>LIVE</span></div>
+   <div class="orbit o1"></div><div class="orbit o2"></div>
+ </div>
+</section>
+<section class="ticker"><div><span>01</span> REAL-TIME FPS</div><div><span>02</span> CPU / GPU</div><div><span>03</span> RAM + BATTERY</div><div><span>04</span> FRAME TIME</div><div><span>05</span> THERMAL STATE</div></section>
+<section class="screens" id="screens">
+ <div class="section-head"><div><small>01 / IN-GAME CAPTURE</small><h2>The overlay<br><em>in motion.</em></h2></div><p>Actual FPSOverlay captures. One frame at a time, full width, automatically moving through the gallery.</p></div>
+ <div class="showcase">
+  <button class="slide-btn prev" id="prev" aria-label="Previous screenshot">←</button>
+  <div class="screen-stage"><div class="stage-glow"></div><img id="sliderImage" src="assets/bully-wide.jpeg" alt="FPSOverlay screenshot"><div class="stage-top"><span id="slideTitle">BULLY / WIDE HUD</span><b id="slideCount">01 / 07</b></div><div class="stage-bottom"><span>FPSOVERLAY</span><i></i><span>LIVE GAME CAPTURE</span><b id="progressText">14%</b></div><div class="progress"><span id="progressBar"></span></div></div>
+  <button class="slide-btn next" id="next" aria-label="Next screenshot">→</button>
+ </div>
+ <div class="thumbs" id="thumbs"></div>
+</section>
+<section class="features" id="features">
+ <div class="section-head feature-head"><div><small>02 / TELEMETRY</small><h2>Everything<br><em>visible.</em></h2></div><p>Designed around compact, readable telemetry so the game stays the focus.</p></div>
+ <div class="bento"><article class="big"><span>FPS</span><strong>60</strong><p>Real-time frame rate</p><div class="spark">▂▃▅▇█▆▅▇█▇▆▅▇█▆</div></article><article><span>CPU</span><strong>A15</strong><p>Processor activity</p></article><article><span>GPU</span><strong>A15 GPU</strong><p>Graphics information</p></article><article><span>RAM</span><strong>3.6G</strong><p>Memory tracking</p></article><article><span>BATTERY</span><strong>55%</strong><p>Live battery state</p></article><article class="wide"><span>FRAME TIME</span><strong>16.7ms</strong><p>See frame pacing instantly.</p><div class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></article><article><span>THERMAL</span><strong class="ok">NORMAL</strong><p>Device thermal state</p></article><article><span>REFRESH</span><strong>60Hz</strong><p>Screen refresh rate</p></article></div>
+</section>
+<section class="install" id="install"><div><small>03 / WORKFLOW</small><h2>Plug in.<br><em>Play.</em></h2></div><div class="steps"><article><b>01</b><strong>DOWNLOAD</strong><p>Get the latest release from GitHub.</p></article><article><b>02</b><strong>INSTALL</strong><p>Add FPSOverlay to your LiveContainer setup.</p></article><article><b>03</b><strong>ENABLE</strong><p>Turn on the overlay and launch a game.</p></article><article><b>04</b><strong>PLAY</strong><p>Telemetry appears over your gameplay.</p></article></div></section>
+<section class="cta"><div class="cta-grid"></div><small>OPEN SOURCE / iOS GAMING</small><h2>MAKE EVERY<br><em>FRAME COUNT.</em></h2><a class="btn primary" href="https://github.com/fazilprogrmr-svg/FPSOverlay-LiveContainer" target="_blank"><span>View project on GitHub</span><b>↗</b></a></section>
+</main>
+<footer><b>FPSOverlay</b><span>Lightweight performance overlay for iOS games running through LiveContainer.</span><a href="https://github.com/fazilprogrmr-svg/FPSOverlay-LiveContainer" target="_blank">GitHub ↗</a></footer>
+<script src="script.js"></script>
+</body></html>
