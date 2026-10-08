@@ -11,7 +11,7 @@ Real-time performance telemetry for iOS gaming — designed for a clean, compact
   &nbsp;·&nbsp;
   <a href="https://github.com/fazilprogrmr-svg/FPSOverlay/issues">Issues</a>
   &nbsp;·&nbsp;
-  <a href="https://fazilprogrmr-svg.github.io/FPSOverlay/">Website</a>
+  <a href="https://fzfalcon.github.io/FPSOverlay/">Website</a>
 </p>
 
 </div>
@@ -32,13 +32,13 @@ Real-time performance telemetry for iOS gaming — designed for a clean, compact
 
 <div align="center">
 
-<img src="docs/assets/game-1.jpeg" width="900" alt="FPSOverlay gameplay preview">
+<img src="docs/assets/bully-compact.jpeg" width="900" alt="FPSOverlay gameplay preview">
 
 </div>
 
 <div align="center">
 
-<img src="docs/assets/game-2.jpeg" width="900" alt="FPSOverlay gameplay preview">
+<img src="docs/assets/maxpayne-compact.jpeg" width="900" alt="FPSOverlay gameplay preview">
 
 </div>
 
