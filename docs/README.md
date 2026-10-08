@@ -9,3 +9,6 @@ Landing page for FPSOverlay-LiveContainer.
 - No fake telemetry is rendered inside the gameplay display.
 
 Open `index.html` locally or deploy the folder to GitHub Pages.
+
+
+Logo assets: `assets/fpsoverlay-logo.png`, `assets/fpsoverlay-lockup.png`, `assets/favicon-32.png`, `assets/apple-touch-icon.png`.
