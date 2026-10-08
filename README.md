@@ -24,7 +24,7 @@ Real-time performance telemetry for iOS gaming — designed for a clean, compact
 
 </div>
 
-> FPSOverlay displays real-time FPS, CPU, GPU, RAM, battery, frame time, refresh rate, thermal state and a live FPS graph. fileciteturn1file0L3-L5
+> FPSOverlay displays real-time FPS, CPU, GPU, RAM, battery, frame time, refresh rate, thermal state and a live FPS graph.
 
 ---
 
